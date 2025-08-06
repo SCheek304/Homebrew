@@ -139,7 +139,11 @@ module Cask
 
       def initialize(cask, *dsl_args)
         @cask = cask
+        @dirmethod = nil
         @dsl_args = dsl_args.deep_dup
+        @dsl_key = nil
+        @english_article = nil
+        @english_name = nil
       end
 
       def config

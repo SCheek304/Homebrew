@@ -40,7 +40,7 @@ Software that can upgrade itself does not integrate well with Homebrew formulae'
 
 ### We don’t like install scripts that download unversioned things
 
-We don't like install scripts that are pulling from the master branch of Git repositories or unversioned, unchecksummed tarballs. These should ideally use `resource` blocks with specific revisions or checksummed tarballs instead. Note that we now allow tools like `cargo`, `gem` and `pip` to download versioned libraries during installation. There's no need to reproduce the functionality of any language package manager with `resource` blocks when we can call it instead.
+We don't like install scripts that are pulling from the default branch of Git repositories or unversioned, unchecksummed tarballs. These should ideally use `resource` blocks with specific revisions or checksummed tarballs instead. Note that we now allow tools like `cargo`, `gem` and `pip` to download versioned libraries during installation. There's no need to reproduce the functionality of any language package manager with `resource` blocks when we can call it instead.
 
 ### We don’t like binary formulae
 

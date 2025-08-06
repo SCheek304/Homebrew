@@ -1,5 +1,5 @@
 ---
-last_review_date: "1970-01-01"
+last_review_date: "2025-04-12"
 ---
 
 # Installation
@@ -14,7 +14,6 @@ The macOS `.pkg` installer also installs Homebrew to its default prefix (`/opt/h
 
 * An Apple Silicon CPU or 64-bit Intel CPU <sup>[1](#1)</sup>
 * macOS Ventura (13) (or higher) installed on officially supported hardware<sup>[2](#2)</sup>
-  * **Note:** Devices using OpenCore Legacy Patcher are not supported
 * Command Line Tools (CLT) for Xcode (from `xcode-select --install` or
   [https://developer.apple.com/download/all/](https://developer.apple.com/download/all/)) or
   [Xcode](https://itunes.apple.com/us/app/xcode/id497799835) <sup>[3](#3)</sup>
@@ -66,7 +65,7 @@ Technically, you can just extract (or `git clone`) Homebrew wherever you want. H
 **TL;DR: pick another prefix at your peril!**
 
 ```sh
-mkdir homebrew && curl -L https://github.com/Homebrew/brew/tarball/master | tar xz --strip-components 1 -C homebrew
+mkdir homebrew && curl -L https://github.com/Homebrew/brew/tarball/main | tar xz --strip-components 1 -C homebrew
 ```
 
 or:
@@ -101,16 +100,16 @@ If you don't follow those directions, Homebrew will not work.
 You need to update your shell's config file (which file exactly depends on your shell, for example `~/.bashrc` or `~/.zshrc`) to include this:
 
 ```sh
-eval "<Homebrew prefix path>/bin/brew shellenv)"
+eval "$(<Homebrew prefix path>/bin/brew shellenv)"
 ```
 
 Replace `<Homebrew prefix path>` with the directory where Homebrew is installed on your system.
-You can find Homebrew's default install location [in this FAQ entry](https://docs.brew.sh/FAQ#why-should-i-install-homebrew-in-the-default-location).
+You can find Homebrew's default install location in [this FAQ entry](FAQ.md#why-should-i-install-homebrew-in-the-default-location).
 
-For more insight, re-run the installer or inspect [the installer's source](https://github.com/Homebrew/install/blob/deacfa6a6e62e5f4002baf9e1fac7a96e9aa5d41/install.sh#L1072-L1088)
+For more insight, re-run the installer or inspect [the installer's source](https://github.com/Homebrew/install/blob/956abfa01f0d1dba285e6d3da86587ed428f19fe/install.sh#L1075-L1091)
 to see how the installer constructs the path it recommends.
 
-See [Tips N' Tricks > Loading Homebrew from the same dotfiles on different operating systems](Tips-N'-Tricks.md#loading-homebrew-from-the-same-dotfiles-on-different-operating-systems)
+See [this tip in Tips and Tricks](Tips-and-Tricks.md#load-homebrew-from-the-same-dotfiles-on-different-operating-systems)
 for another way to handle this across multiple operating systems.
 
 ## Uninstallation
@@ -119,7 +118,7 @@ Uninstallation is documented in the [FAQ](FAQ.md#how-do-i-uninstall-homebrew).
 
 <a data-proofer-ignore name="1"><sup>1</sup></a> For 32-bit or PPC support see [Tigerbrew](https://github.com/mistydemeo/tigerbrew).
 
-<a data-proofer-ignore name="2"><sup>2</sup></a> macOS 13 (Ventura) or higher is best and supported, 10.11 (El Capitan) – 12 (Monterey) are unsupported but may work and 10.10 (Yosemite) and older will not run Homebrew at all. For 10.4 (Tiger) – 10.6 (Snow Leopard) see [Tigerbrew](https://github.com/mistydemeo/tigerbrew).
+<a data-proofer-ignore name="2"><sup>2</sup></a> macOS 13 (Ventura) or higher is best and supported, 10.11 (El Capitan) – 12 (Monterey) are unsupported but may work and 10.10 (Yosemite) and older will not run Homebrew at all. For 10.4 (Tiger) – 10.6 (Snow Leopard) see [Tigerbrew](https://github.com/mistydemeo/tigerbrew). Using OpenCore Legacy Patcher is a [Tier 2](Support-Tiers.md#tier-2) or [Tier 3](Support-Tiers.md#tier-3) configuration depending on CPU generation.
 
 <a data-proofer-ignore name="3"><sup>3</sup></a> You may need to install Xcode, the CLT, or both depending on the formula, to install a bottle (binary package) which is the only supported configuration. Downloading Xcode may require an Apple Developer account on older versions of Mac OS X. Sign up for free at [Apple's website](https://developer.apple.com/account/).
 

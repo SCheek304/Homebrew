@@ -1,69 +1,71 @@
+# This file is synced from the `.github` repository, do not modify it directly.
+---
 version: 2
-
-updates:
-  - package-ecosystem: github-actions
-    directory: /
+multi-ecosystem-groups:
+  all:
     schedule:
       interval: weekly
-    allow:
-      - dependency-type: all
-    # The actions in triage-issues.yml are updated in the Homebrew/.github repo
-    ignore:
-      - dependency-name: actions/stale
-    groups:
-      artifacts:
-        patterns:
-          - actions/*-artifact
-    open-pull-requests-limit: 10
+      day: friday
+      time: '08:00'
+      timezone: Etc/UTC
+updates:
+- package-ecosystem: bundler
+  directories:
+  - "/Library/Homebrew"
+  multi-ecosystem-group: all
+  patterns:
+  - "*"
+  allow:
+  - dependency-type: all
+  cooldown:
+    default-days: 1
+    semver-major-days: 14
+    semver-minor-days: 7
+    semver-patch-days: 1
+    include:
+    - "*"
+- package-ecosystem: devcontainers
+  directory: "/"
+  multi-ecosystem-group: all
+  patterns:
+  - "*"
+  allow:
+  - dependency-type: all
+  cooldown:
+    default-days: 1
+    include:
+    - "*"
+- package-ecosystem: docker
+  directory: "/"
+  multi-ecosystem-group: all
+  patterns:
+  - "*"
+  allow:
+  - dependency-type: all
+- package-ecosystem: github-actions
+  directory: "/"
+  multi-ecosystem-group: all
+  patterns:
+  - "*"
+  allow:
+  - dependency-type: all
+  cooldown:
+    default-days: 1
+    include:
+    - "*"
+- package-ecosystem: pip
+  directories:
+  - "/Library/Homebrew/formula-analytics/"
+  multi-ecosystem-group: all
+  patterns:
+  - "*"
+  allow:
+  - dependency-type: all
+  cooldown:
+    default-days: 1
+    semver-major-days: 14
+    semver-minor-days: 7
+    semver-patch-days: 1
+    include:
+    - "*"
 
-  - package-ecosystem: bundler
-    directory: /Library/Homebrew
-    schedule:
-      interval: daily
-    allow:
-      - dependency-type: all
-    groups:
-      sorbet:
-        patterns:
-          - "sorbet*"
-    open-pull-requests-limit: 10
-
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: daily
-    allow:
-      - dependency-type: all
-    open-pull-requests-limit: 10
-
-  - package-ecosystem: docker
-    directory: /
-    schedule:
-      interval: daily
-    allow:
-      - dependency-type: all
-    open-pull-requests-limit: 10
-
-  - package-ecosystem: devcontainers
-    directory: /
-    schedule:
-      interval: daily
-    allow:
-      - dependency-type: all
-    open-pull-requests-limit: 10
-
-  - package-ecosystem: pip
-    directory: /
-    schedule:
-      interval: daily
-    allow:
-      - dependency-type: all
-    open-pull-requests-limit: 10
-
-  - package-ecosystem: pip
-    directory: /Library/Homebrew/formula-analytics/
-    schedule:
-      interval: daily
-    allow:
-      - dependency-type: all
-    open-pull-requests-limit: 10

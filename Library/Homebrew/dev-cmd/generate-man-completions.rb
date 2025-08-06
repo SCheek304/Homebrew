@@ -16,6 +16,7 @@ module Homebrew
         description <<~EOS
           Generate Homebrew's manpages and shell completions.
         EOS
+
         named_args :none
       end
 

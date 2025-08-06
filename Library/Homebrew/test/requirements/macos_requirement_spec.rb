@@ -6,6 +6,7 @@ RSpec.describe MacOSRequirement do
   subject(:requirement) { described_class.new }
 
   let(:macos_oldest_allowed) { MacOSVersion.new(HOMEBREW_MACOS_OLDEST_ALLOWED) }
+  let(:macos_newest_allowed) { MacOSVersion.new(HOMEBREW_MACOS_NEWEST_UNSUPPORTED) }
   let(:big_sur_major) { MacOSVersion.new("11.0") }
 
   describe "#satisfied?" do
@@ -35,6 +36,19 @@ RSpec.describe MacOSRequirement do
     expect(min_requirement.minimum_version).to eq big_sur_major
     expect(exact_requirement.minimum_version).to eq big_sur_major
     expect(range_requirement.minimum_version).to eq big_sur_major
+  end
+
+  specify "#maximum_version" do
+    no_requirement = described_class.new
+    max_requirement = described_class.new([:big_sur], comparator: "<=")
+    min_requirement = described_class.new([:big_sur], comparator: ">=")
+    exact_requirement = described_class.new([:big_sur], comparator: "==")
+    range_requirement = described_class.new([[:catalina, :big_sur]], comparator: "==")
+    expect(no_requirement.maximum_version).to eq macos_newest_allowed
+    expect(max_requirement.maximum_version).to eq big_sur_major
+    expect(min_requirement.maximum_version).to eq macos_newest_allowed
+    expect(exact_requirement.maximum_version).to eq big_sur_major
+    expect(range_requirement.maximum_version).to eq big_sur_major
   end
 
   specify "#allows?" do

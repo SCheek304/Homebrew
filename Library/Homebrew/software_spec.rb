@@ -12,7 +12,7 @@ require "utils/bottles"
 require "patch"
 require "compilers"
 require "macos_version"
-require "extend/on_system"
+require "on_system"
 
 class SoftwareSpec
   include Downloadable
@@ -28,9 +28,9 @@ class SoftwareSpec
   attr_reader :name, :full_name, :owner, :build, :resources, :patches, :options, :deprecated_flags,
               :deprecated_options, :dependency_collector, :bottle_specification, :compiler_failures
 
-  def_delegators :@resource, :stage, :fetch, :verify_download_integrity, :source_modified_time, :download_name,
+  def_delegators :@resource, :stage, :fetch, :verify_download_integrity, :source_modified_time,
                  :cached_download, :clear_cache, :checksum, :mirrors, :specs, :using, :version, :mirror,
-                 :downloader
+                 :downloader, :download_queue_name, :download_queue_type
 
   def_delegators :@resource, :sha256
 
@@ -38,7 +38,7 @@ class SoftwareSpec
     super()
 
     # Ensure this is synced with `initialize_dup` and `freeze` (excluding simple objects like integers and booleans)
-    @resource = Resource::Formula.new
+    @resource = T.let(Resource::Formula.new, Resource::Formula)
     @resources = {}
     @dependency_collector = DependencyCollector.new
     @bottle_specification = BottleSpecification.new
@@ -81,11 +81,6 @@ class SoftwareSpec
     super
   end
 
-  sig { override.returns(String) }
-  def download_type
-    "formula"
-  end
-
   def owner=(owner)
     @name = owner.name
     @full_name = owner.full_name
@@ -102,11 +97,13 @@ class SoftwareSpec
     patches.each { |p| p.owner = self }
   end
 
+  sig { override.params(val: T.nilable(String), specs: T::Hash[Symbol, T.anything]).returns(T.nilable(String)) }
   def url(val = nil, specs = {})
-    return @resource.url if val.nil?
-
-    @resource.url(val, **specs)
-    dependency_collector.add(@resource)
+    if val
+      @resource.url(val, **specs)
+      dependency_collector.add(@resource)
+    end
+    @resource.url
   end
 
   def bottle_defined?
@@ -150,11 +147,6 @@ class SoftwareSpec
 
       resources.fetch(name) { raise ResourceMissingError.new(owner, name) }
     end
-  end
-
-  def go_resource(name, &block)
-    odisabled "`SoftwareSpec#go_resource`", "Go modules"
-    resource name, Resource::Go, &block
   end
 
   def option_defined?(name)

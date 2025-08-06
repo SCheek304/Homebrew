@@ -31,7 +31,7 @@ RSpec.describe Homebrew::Cmd::Leaves do
     end
   end
 
-  context "when there are installed Formulae", :integration_test do
+  context "when there are installed Formulae", :integration_test, :no_api do
     it "prints all installed Formulae that are not dependencies of another installed Formula" do
       setup_test_formula "foo"
       setup_test_formula "bar"

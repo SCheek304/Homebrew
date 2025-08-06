@@ -28,7 +28,6 @@ module Homebrew
           Generate a GitHub Actions matrix for a given pull request URL or list of cask names.
           For internal use in Homebrew taps.
         EOS
-
         switch "--url",
                description: "Treat named argument as a pull request URL."
         switch "--cask", "--casks",
@@ -45,6 +44,7 @@ module Homebrew
         conflicts "--syntax-only", "--new"
 
         named_args [:cask, :url], min: 0
+
         hide_from_man_page!
       end
 
@@ -67,8 +67,8 @@ module Homebrew
         end
         raise UsageError, "Only one url can be specified" if pr_url&.count&.> 1
 
-        labels = if pr_url
-          pr = GitHub::API.open_rest(pr_url.first)
+        labels = if pr_url && (first_pr_url = pr_url.first)
+          pr = GitHub::API.open_rest(first_pr_url)
           pr.fetch("labels").map { |l| l.fetch("name") }
         else
           []
@@ -263,11 +263,10 @@ module Homebrew
           audit_exceptions << %w[homepage_https_availability] if labels.include?("ci-skip-homepage")
 
           if labels.include?("ci-skip-livecheck")
-            audit_exceptions << %w[hosting_with_livecheck livecheck_https_availability
-                                   livecheck_min_os livecheck_version]
+            audit_exceptions << %w[hosting_with_livecheck livecheck_https_availability livecheck_version min_os]
           end
 
-          audit_exceptions << "livecheck_min_os" if labels.include?("ci-skip-livecheck-min-os")
+          audit_exceptions << "min_os" if labels.include?("ci-skip-livecheck-min-os")
 
           if labels.include?("ci-skip-repository")
             audit_exceptions << %w[github_repository github_prerelease_version
@@ -275,10 +274,7 @@ module Homebrew
                                    bitbucket_repository]
           end
 
-          if labels.include?("ci-skip-token")
-            audit_exceptions << %w[token_conflicts token_valid
-                                   token_bad_words]
-          end
+          audit_exceptions << %w[token_valid token_bad_words] if labels.include?("ci-skip-token")
 
           audit_args << "--except" << audit_exceptions.join(",") if audit_exceptions.any?
 

@@ -131,4 +131,92 @@ RSpec.describe Homebrew::Cmd::UpdateReport do
       end
     end
   end
+
+  describe ReporterHub do
+    let(:hub) { described_class.new }
+
+    before do
+      ENV["HOMEBREW_NO_COLOR"] = "1"
+      allow(hub).to receive(:select_formula_or_cask).and_return([])
+    end
+
+    it "dumps new formulae report" do
+      allow(hub).to receive(:select_formula_or_cask).with(:A).and_return(["foo", "bar", "baz"])
+      allow(hub).to receive_messages(installed?: false, all_formula_json: [
+        { "name" => "foo", "desc" => "foobly things" },
+        { "name" => "baz", "desc" => "baz desc" },
+      ])
+      expect { hub.dump }.to output(<<~EOS).to_stdout
+        ==> New Formulae
+        bar
+        baz: baz desc
+        foo: foobly things
+      EOS
+    end
+
+    it "dumps new casks report" do
+      allow(hub).to receive(:select_formula_or_cask).with(:AC).and_return(["foo/cask1", "foo/cask2", "foo/cask3"])
+      allow(hub).to receive_messages(cask_installed?: false, all_cask_json: [
+        { "token" => "cask1", "desc" => "desc1" },
+        { "token" => "cask3", "desc" => "desc3" },
+      ])
+      allow(Cask::Caskroom).to receive(:any_casks_installed?).and_return(true)
+      expect { hub.dump }.to output(<<~EOS).to_stdout
+        ==> New Casks
+        cask1: desc1
+        cask2
+        cask3: desc3
+      EOS
+    end
+
+    it "dumps deleted installed formulae and casks report" do
+      allow(hub).to receive(:select_formula_or_cask).with(:D).and_return(["baz", "foo", "bar"])
+      allow(hub).to receive(:installed?).with("baz").and_return(true)
+      allow(hub).to receive(:installed?).with("foo").and_return(true)
+      allow(hub).to receive(:installed?).with("bar").and_return(true)
+      allow(hub).to receive(:select_formula_or_cask).with(:A).and_return([])
+      allow(hub).to receive(:select_formula_or_cask).with(:DC).and_return(["cask2", "cask1"])
+      allow(hub).to receive(:cask_installed?).with("cask1").and_return(true)
+      allow(hub).to receive(:cask_installed?).with("cask2").and_return(true)
+      allow(Homebrew::SimulateSystem).to receive(:simulating_or_running_on_linux?).and_return(false)
+      expect { hub.dump }.to output(<<~EOS).to_stdout
+        ==> Deleted Installed Formulae
+        bar
+        baz
+        foo
+        ==> Deleted Installed Casks
+        cask1
+        cask2
+      EOS
+    end
+
+    it "dumps outdated formulae and casks report" do
+      allow(Formula).to receive(:installed).and_return([
+        instance_double(Formula, name: "foo", outdated?: true),
+        instance_double(Formula, name: "bar", outdated?: true),
+      ])
+      allow(Cask::Caskroom).to receive(:casks).and_return([
+        instance_double(Cask::Cask, token: "baz", outdated?: true),
+        instance_double(Cask::Cask, token: "qux", outdated?: true),
+      ])
+      expect { hub.dump }.to output(<<~EOS).to_stdout
+        ==> Outdated Formulae
+        bar
+        foo
+        ==> Outdated Casks
+        baz
+        qux
+
+        You have 2 outdated formulae and 2 outdated casks installed.
+        You can upgrade them with brew upgrade
+        or list them with brew outdated.
+      EOS
+    end
+
+    it "prints nothing if there are no changes" do
+      allow(Formula).to receive(:installed).and_return([])
+      allow(Cask::Caskroom).to receive(:casks).and_return([])
+      expect { hub.dump }.not_to output.to_stdout
+    end
+  end
 end

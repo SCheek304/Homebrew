@@ -87,7 +87,7 @@ module SPDX
     return ALLOWED_LICENSE_SYMBOLS.include? license if license.is_a? Symbol
 
     license = license.delete_suffix "+"
-    license_data["licenses"].any? { |spdx_license| spdx_license["licenseId"] == license }
+    license_data["licenses"].any? { |spdx_license| spdx_license["licenseId"].downcase == license.downcase }
   end
 
   sig { params(license: T.any(String, Symbol)).returns(T::Boolean) }
@@ -97,14 +97,14 @@ module SPDX
 
     license = license.to_s.delete_suffix "+"
     license_data["licenses"].none? do |spdx_license|
-      spdx_license["licenseId"] == license && !spdx_license["isDeprecatedLicenseId"]
+      spdx_license["licenseId"].downcase == license.downcase && !spdx_license["isDeprecatedLicenseId"]
     end
   end
 
   sig { params(exception: String).returns(T::Boolean) }
   def valid_license_exception?(exception)
     exception_data["exceptions"].any? do |spdx_exception|
-      spdx_exception["licenseExceptionId"] == exception && !spdx_exception["isDeprecatedLicenseId"]
+      spdx_exception["licenseExceptionId"].downcase == exception.downcase && !spdx_exception["isDeprecatedLicenseId"]
     end
   end
 
@@ -229,13 +229,13 @@ module SPDX
   end
 
   sig {
-    params(license_expression: T.any(String, Symbol, T::Hash[Symbol, T.untyped]),
-           forbidden_licenses: T::Hash[Symbol, T.untyped]).returns(T::Boolean)
+    params(license_expression: T.any(String, Symbol, T::Hash[T.any(Symbol, String), T.untyped]),
+           forbidden_licenses: T::Hash[T.any(Symbol, String), T.untyped]).returns(T::Boolean)
   }
   def licenses_forbid_installation?(license_expression, forbidden_licenses)
     case license_expression
     when String, Symbol
-      forbidden_licenses_include? license_expression.to_s, forbidden_licenses
+      forbidden_licenses_include? license_expression, forbidden_licenses
     when Hash
       key = license_expression.keys.first
       return false if key.nil?

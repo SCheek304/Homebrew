@@ -20,12 +20,13 @@ module RuboCop
 
       STANZA_GROUPS = T.let(
         [
-          [:arch, :on_arch_conditional],
+          [:arch, :on_arch_conditional, :os],
           [:version, :sha256],
           ON_SYSTEM_METHODS_STANZA_ORDER,
           [:language],
           [:url, :appcast, :name, :desc, :homepage],
           [:livecheck],
+          [:no_autobump!],
           [:deprecate!, :disable!],
           [
             :auto_updates,
@@ -40,6 +41,9 @@ module RuboCop
             :installer,
             :binary,
             :manpage,
+            :bash_completion,
+            :fish_completion,
+            :zsh_completion,
             :colorpicker,
             :dictionary,
             :font,

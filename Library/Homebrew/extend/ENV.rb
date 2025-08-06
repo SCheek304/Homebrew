@@ -7,16 +7,6 @@ require "extend/ENV/shared"
 require "extend/ENV/std"
 require "extend/ENV/super"
 
-module Kernel
-  sig { params(env: T.nilable(String)).returns(T::Boolean) }
-  def superenv?(env)
-    return false if env == "std"
-
-    !Superenv.bin.nil?
-  end
-  private :superenv?
-end
-
 # <!-- vale off -->
 # @!parse
 #   # `ENV` is not actually a class, but this makes YARD happy

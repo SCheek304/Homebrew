@@ -627,6 +627,12 @@ module GitHub
     pull_requests || []
   end
 
+  # Check for duplicate pull requests that modify the same file.
+  #
+  # Exits the process on duplicates if `strict` or both `version` and
+  # `official_tap`, otherwise warns.
+  #
+  # @api internal
   sig {
     params(
       name:            String,
@@ -635,9 +641,12 @@ module GitHub
       quiet:           T::Boolean,
       state:           T.nilable(String),
       version:         T.nilable(String),
+      official_tap:    T::Boolean,
+      strict:          T::Boolean,
     ).void
   }
-  def self.check_for_duplicate_pull_requests(name, tap_remote_repo, file:, quiet: false, state: nil, version: nil)
+  def self.check_for_duplicate_pull_requests(name, tap_remote_repo, file:, quiet: false, state: nil,
+                                             version: nil, official_tap: true, strict: false)
     pull_requests = fetch_pull_requests(name, tap_remote_repo, state:, version:)
 
     pull_requests.select! do |pr|
@@ -657,11 +666,13 @@ module GitHub
       Manually open these PRs if you are sure that they are not duplicates (and tell us that in the PR).
     EOS
 
-    if version
+    if strict || (version && official_tap)
       odie <<~EOS
         #{duplicates_message.chomp}
         #{error_message}
       EOS
+    elsif !official_tap
+      opoo duplicates_message
     elsif quiet
       opoo error_message
     else
@@ -702,96 +713,108 @@ module GitHub
 
   def self.create_bump_pr(info, args:)
     tap = info[:tap]
-    sourcefile_path = info[:sourcefile_path]
-    old_contents = info[:old_contents]
-    additional_files = info[:additional_files] || []
     remote = info[:remote] || "origin"
     remote_branch = info[:remote_branch] || tap.git_repository.origin_branch_name
     branch = info[:branch_name]
-    commit_message = info[:commit_message]
     previous_branch = info[:previous_branch] || "-"
     tap_remote_repo = info[:tap_remote_repo] || tap.full_name
     pr_message = info[:pr_message]
+    pr_title = info[:pr_title]
+    commits = info[:commits]
 
-    sourcefile_path.parent.cd do
+    remote_url = Utils.popen_read("git", "remote", "get-url", "--push", "origin").chomp
+    username = tap.user
+
+    tap.path.cd do
+      if args.no_fork?
+        remote_url = Utils.popen_read("git", "remote", "get-url", "--push", "origin").chomp
+        username = tap.user
+        add_auth_token_to_url!(remote_url)
+      else
+        begin
+          remote_url, username = forked_repo_info!(tap_remote_repo, org: args.fork_org)
+        rescue *API::ERRORS => e
+          commits.each do |commit|
+            commit[:sourcefile_path].atomic_write(commit[:old_contents])
+          end
+          odie "Unable to fork: #{e.message}!"
+        end
+      end
+
+      next if args.dry_run?
+
       require "utils/popen"
       git_dir = Utils.popen_read("git", "rev-parse", "--git-dir").chomp
       shallow = !git_dir.empty? && File.exist?("#{git_dir}/shallow")
-      changed_files = [sourcefile_path]
-      changed_files += additional_files if additional_files.present?
+      safe_system "git", "fetch", "--unshallow", "origin" if !args.commit? && shallow
+      safe_system "git", "checkout", "--no-track", "-b", branch, "#{remote}/#{remote_branch}" unless args.commit?
+      Utils::Git.set_name_email!
+    end
 
-      if args.dry_run? || (args.write_only? && !args.commit?)
-        remote_url = if args.no_fork?
-          Utils.popen_read("git", "remote", "get-url", "--push", "origin").chomp
+    commits.each do |commit|
+      sourcefile_path = commit[:sourcefile_path]
+      commit_message = commit[:commit_message]
+      additional_files = commit[:additional_files] || []
+
+      sourcefile_path.parent.cd do
+        require "utils/popen"
+        git_dir = Utils.popen_read("git", "rev-parse", "--git-dir").chomp
+        shallow = !git_dir.empty? && File.exist?("#{git_dir}/shallow")
+        changed_files = [sourcefile_path]
+        changed_files += additional_files if additional_files.present?
+
+        if args.dry_run? || (args.write_only? && !args.commit?)
+          ohai "git checkout --no-track -b #{branch} #{remote}/#{remote_branch}"
+          ohai "git fetch --unshallow origin" if shallow
+          ohai "git add #{changed_files.join(" ")}"
+          ohai "git commit --no-edit --verbose --message='#{commit_message}' " \
+               "-- #{changed_files.join(" ")}"
+          ohai "git push --set-upstream #{remote_url} #{branch}:#{branch}"
+          ohai "git checkout --quiet #{previous_branch}"
+          ohai "create pull request with GitHub API (base branch: #{remote_branch})"
         else
-          fork_message = "try to fork repository with GitHub API" \
-                         "#{" into `#{args.fork_org}` organization" if args.fork_org}"
-          ohai fork_message
-          "FORK_URL"
+          safe_system "git", "add", *changed_files
+          Utils::Git.set_name_email!
+          safe_system "git", "commit", "--no-edit", "--verbose",
+                      "--message=#{commit_message}",
+                      "--", *changed_files
         end
-        ohai "git fetch --unshallow origin" if shallow
-        ohai "git add #{changed_files.join(" ")}"
-        ohai "git checkout --no-track -b #{branch} #{remote}/#{remote_branch}"
-        ohai "git commit --no-edit --verbose --message='#{commit_message}' " \
-             "-- #{changed_files.join(" ")}"
-        ohai "git push --set-upstream #{remote_url} #{branch}:#{branch}"
-        ohai "git checkout --quiet #{previous_branch}"
-        ohai "create pull request with GitHub API (base branch: #{remote_branch})"
-      else
+      end
+    end
 
-        unless args.commit?
-          if args.no_fork?
-            remote_url = Utils.popen_read("git", "remote", "get-url", "--push", "origin").chomp
-            add_auth_token_to_url!(remote_url)
-            username = tap.user
-          else
-            begin
-              remote_url, username = forked_repo_info!(tap_remote_repo, org: args.fork_org)
-            rescue *API::ERRORS => e
-              sourcefile_path.atomic_write(old_contents)
-              odie "Unable to fork: #{e.message}!"
-            end
-          end
+    return if args.commit? || args.dry_run?
 
-          safe_system "git", "fetch", "--unshallow", "origin" if shallow
-        end
-
-        safe_system "git", "add", *changed_files
-        safe_system "git", "checkout", "--no-track", "-b", branch, "#{remote}/#{remote_branch}" unless args.commit?
-        Utils::Git.set_name_email!
-        safe_system "git", "commit", "--no-edit", "--verbose",
-                    "--message=#{commit_message}",
-                    "--", *changed_files
-        return if args.commit?
-
-        system_command!("git", args:         ["push", "--set-upstream", remote_url, "#{branch}:#{branch}"],
-                               print_stdout: true)
-        safe_system "git", "checkout", "--quiet", previous_branch
+    tap.path.cd do
+      system_command!("git", args:         ["push", "--set-upstream", remote_url, "#{branch}:#{branch}"],
+                             print_stdout: true)
+      safe_system "git", "checkout", "--quiet", previous_branch
+      pr_message = <<~EOS
+        #{pr_message}
+      EOS
+      user_message = args.message
+      if user_message
         pr_message = <<~EOS
+          #{user_message}
+
+          ---
+
           #{pr_message}
         EOS
-        user_message = args.message
-        if user_message
-          pr_message = <<~EOS
-            #{user_message}
+      end
 
-            ---
-
-            #{pr_message}
-          EOS
+      begin
+        url = create_pull_request(tap_remote_repo, pr_title,
+                                  "#{username}:#{branch}", remote_branch, pr_message)["html_url"]
+        if args.no_browse?
+          puts url
+        else
+          exec_browser url
         end
-
-        begin
-          url = create_pull_request(tap_remote_repo, commit_message,
-                                    "#{username}:#{branch}", remote_branch, pr_message)["html_url"]
-          if args.no_browse?
-            puts url
-          else
-            exec_browser url
-          end
-        rescue *API::ERRORS => e
-          odie "Unable to open pull request: #{e.message}!"
+      rescue *API::ERRORS => e
+        commits.each do |commit|
+          commit[:sourcefile_path].atomic_write(commit[:old_contents])
         end
+        odie "Unable to open pull request for #{tap_remote_repo}: #{e.message}!"
       end
     end
   end
@@ -876,7 +899,7 @@ module GitHub
   end
 
   def self.count_repo_commits(nwo, user, from: nil, to: nil, max: nil)
-    odie "Cannot count commits, HOMEBREW_NO_GITHUB_API set!" if Homebrew::EnvConfig.no_github_api?
+    odie "Cannot count commits as `$HOMEBREW_NO_GITHUB_API` is set!" if Homebrew::EnvConfig.no_github_api?
 
     author_shas = repo_commits_for_user(nwo, user, "author", from, to, max)
     committer_shas = repo_commits_for_user(nwo, user, "committer", from, to, max)
@@ -899,7 +922,7 @@ module GitHub
     # BrewTestBot can open as many PRs as it wants.
     return false if ENV["HOMEBREW_TEST_BOT_AUTOBUMP"].present?
 
-    odie "Cannot count PRs, HOMEBREW_NO_GITHUB_API set!" if Homebrew::EnvConfig.no_github_api?
+    odie "Cannot count PRs as `$HOMEBREW_NO_GITHUB_API` is set!" if Homebrew::EnvConfig.no_github_api?
 
     query = <<~EOS
       query($after: String) {
@@ -945,8 +968,12 @@ module GitHub
         pull_requests.fetch("pageInfo")
       end
     rescue => e
-      # Ignore SAML access errors (https://github.com/Homebrew/brew/issues/18610)
-      raise unless e.message.include?("Resource protected by organization SAML enforcement")
+      # Ignore SAML access errors (https://github.com/Homebrew/brew/issues/18610) and related
+      # IP allow list errors (https://github.com/orgs/Homebrew/discussions/6263)
+      return false if e.message.include?("Resource protected by organization SAML enforcement") ||
+                      e.message.include?("your IP address is not permitted to access this resource")
+
+      raise
     end
 
     false

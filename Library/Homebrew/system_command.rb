@@ -6,7 +6,7 @@ require "shellwords"
 require "uri"
 
 require "context"
-require "extend/io"
+require "readline_nonblock"
 require "utils/timer"
 
 # Class for running sub-processes and capturing their output and exit status.
@@ -44,7 +44,7 @@ class SystemCommand
 
   sig { returns(SystemCommand::Result) }
   def run!
-    $stderr.puts redact_secrets(command.shelljoin.gsub('\=', "="), @secrets) if verbose? || debug?
+    $stderr.puts redact_secrets(command.shelljoin.gsub('\=', "="), @secrets) if verbose? && debug?
 
     @output = []
 
@@ -104,7 +104,7 @@ class SystemCommand
     print_stdout: false,
     print_stderr: true,
     debug: nil,
-    verbose: false,
+    verbose: T.unsafe(nil),
     secrets: [],
     chdir: T.unsafe(nil),
     reset_uid: false,
@@ -201,7 +201,9 @@ class SystemCommand
     askpass_flags = ENV.key?("SUDO_ASKPASS") ? ["-A"] : []
     user_flags = []
     if Homebrew::EnvConfig.sudo_through_sudo_user?
-      raise ArgumentError, "HOMEBREW_SUDO_THROUGH_SUDO_USER set but SUDO_USER unset!" if homebrew_sudo_user.blank?
+      if homebrew_sudo_user.blank?
+        raise ArgumentError, "`$HOMEBREW_SUDO_THROUGH_SUDO_USER` set but `$SUDO_USER` unset!"
+      end
 
       user_flags += ["--prompt", "Password for %p:", "-u", homebrew_sudo_user,
                      *askpass_flags,
@@ -361,7 +363,7 @@ class SystemCommand
 
       readable_sources.each do |source|
         loop do
-          line = source.readline_nonblock || ""
+          line = ReadlineNonblock.read(source)
           yield(sources.fetch(source), line)
         end
       rescue EOFError

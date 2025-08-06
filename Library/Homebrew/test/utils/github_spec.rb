@@ -71,14 +71,6 @@ RSpec.describe GitHub do
       )
       expect(urls).to eq(["https://api.github.com/repos/Homebrew/homebrew-core/actions/artifacts/1969725476/zip"])
     end
-
-    it "supports pattern matching" do
-      urls = described_class.get_artifact_urls(
-        described_class.get_workflow_run("Homebrew", "brew", "17068",
-                                         workflow_id: "pkg-installer.yml", artifact_pattern: "Homebrew-*.pkg"),
-      )
-      expect(urls).to eq(["https://api.github.com/repos/Homebrew/brew/actions/artifacts/1405050842/zip"])
-    end
   end
 
   describe "::pull_request_commits", :needs_network do

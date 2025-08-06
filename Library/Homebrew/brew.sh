@@ -65,7 +65,12 @@ else
   CACHE_HOME="${HOMEBREW_XDG_CACHE_HOME:-${HOME}/.cache}"
   HOMEBREW_DEFAULT_CACHE="${CACHE_HOME}/Homebrew"
   HOMEBREW_DEFAULT_LOGS="${CACHE_HOME}/Homebrew/Logs"
-  HOMEBREW_DEFAULT_TEMP="/tmp"
+  if [[ -r "/var/tmp" && -w "/var/tmp" ]]
+  then
+    HOMEBREW_DEFAULT_TEMP="/var/tmp"
+  else
+    HOMEBREW_DEFAULT_TEMP="/tmp"
+  fi
 fi
 
 realpath() {
@@ -104,6 +109,10 @@ HOMEBREW_CASKROOM="${HOMEBREW_PREFIX}/Caskroom"
 HOMEBREW_CACHE="${HOMEBREW_CACHE:-${HOMEBREW_DEFAULT_CACHE}}"
 HOMEBREW_LOGS="${HOMEBREW_LOGS:-${HOMEBREW_DEFAULT_LOGS}}"
 HOMEBREW_TEMP="${HOMEBREW_TEMP:-${HOMEBREW_DEFAULT_TEMP}}"
+if [[ ! -w "${HOMEBREW_TEMP}" ]]
+then
+  HOMEBREW_TEMP="${HOMEBREW_DEFAULT_TEMP}"
+fi
 
 # commands that take a single or no arguments.
 # HOMEBREW_LIBRARY set by bin/brew
@@ -246,8 +255,15 @@ check-run-command-as-root() {
   [[ -f /run/.containerenv ]] && return
   [[ -f /proc/1/cgroup ]] && grep -E "azpl_job|actions_job|docker|garden|kubepods" -q /proc/1/cgroup && return
 
-  # Homebrew Services may need `sudo` for system-wide daemons.
-  [[ "${HOMEBREW_COMMAND}" == "services" ]] && return
+  # `brew services` may need `sudo` for system-wide daemons.
+  if [[ "${HOMEBREW_COMMAND}" == "services" ]]
+  then
+    # Need to disable Bootsnap when running as root to avoid permission errors:
+    # https://github.com/Homebrew/brew/issues/19904
+    export HOMEBREW_NO_BOOTSNAP="1"
+
+    return
+  fi
 
   # It's fine to run this as root as it's not changing anything.
   [[ "${HOMEBREW_COMMAND}" == "--prefix" ]] && return
@@ -373,8 +389,11 @@ auto-update() {
     unset HOMEBREW_AUTO_UPDATING
     unset HOMEBREW_AUTO_UPDATE_TAP
 
-    # exec a new process to set any new environment variables.
-    exec "${HOMEBREW_BREW_FILE}" "$@"
+    if [[ $# -gt 0 ]]
+    then
+      # exec a new process to set any new environment variables.
+      exec "${HOMEBREW_BREW_FILE}" "$@"
+    fi
   fi
 
   unset AUTO_UPDATE_COMMANDS
@@ -383,6 +402,22 @@ auto-update() {
   unset HOMEBREW_AUTO_UPDATE_CORE_TAP
   unset HOMEBREW_AUTO_UPDATE_CASK_TAP
 }
+
+# Only `brew update-if-needed` should be handled here.
+# We want it as fast as possible but it needs auto-update() defined above.
+# HOMEBREW_LIBRARY set by bin/brew
+# shellcheck disable=SC2154
+# doesn't need a default case as other arguments handled elsewhere.
+# shellcheck disable=SC2249
+# Don't need to pass through any arguments.
+# shellcheck disable=SC2119
+case "$@" in
+  update-if-needed)
+    source "${HOMEBREW_LIBRARY}/Homebrew/cmd/update-if-needed.sh"
+    homebrew-update-if-needed
+    exit 0
+    ;;
+esac
 
 #####
 ##### Setup output so e.g. odie looks as nice as possible.
@@ -437,7 +472,7 @@ fi
 #####
 
 # Docker image deprecation
-if [[ -f "${HOMEBREW_REPOSITORY}/.docker-deprecate" ]]
+if [[ -f "${HOMEBREW_REPOSITORY}/.docker-deprecate" && -z "${HOMEBREW_TESTS}" ]]
 then
   read -r DOCKER_DEPRECATION_MESSAGE <"${HOMEBREW_REPOSITORY}/.docker-deprecate"
   if [[ -n "${GITHUB_ACTIONS}" ]]
@@ -496,9 +531,9 @@ GIT_REVISION=$("${HOMEBREW_GIT}" -C "${HOMEBREW_REPOSITORY}" rev-parse HEAD 2>/d
 if [[ -z "${GIT_REVISION}" ]]
 then
   read -r GIT_HEAD 2>/dev/null <"${HOMEBREW_REPOSITORY}/.git/HEAD"
-  if [[ "${GIT_HEAD}" == "ref: refs/heads/master" ]]
+  if [[ "${GIT_HEAD}" == "ref: refs/heads/main" ]]
   then
-    read -r GIT_REVISION 2>/dev/null <"${HOMEBREW_REPOSITORY}/.git/refs/heads/master"
+    read -r GIT_REVISION 2>/dev/null <"${HOMEBREW_REPOSITORY}/.git/refs/heads/main"
   elif [[ "${GIT_HEAD}" == "ref: refs/heads/stable" ]]
   then
     read -r GIT_REVISION 2>/dev/null <"${HOMEBREW_REPOSITORY}/.git/refs/heads/stable"
@@ -565,6 +600,11 @@ case "$1" in
     homebrew-version
     exit 0
     ;;
+  mcp-server)
+    source "${HOMEBREW_LIBRARY}/Homebrew/cmd/mcp-server.sh"
+    homebrew-mcp-server "$@"
+    exit 0
+    ;;
 esac
 
 # TODO: bump version when new macOS is released or announced and update references in:
@@ -574,6 +614,8 @@ esac
 # and, if needed:
 # - MacOSVersion::SYMBOLS
 HOMEBREW_MACOS_NEWEST_UNSUPPORTED="16"
+# TODO: bump version when new macOS is released
+HOMEBREW_MACOS_NEWEST_SUPPORTED="15"
 # TODO: bump version when new macOS is released and update references in:
 # - docs/Installation.md
 # - HOMEBREW_MACOS_OLDEST_SUPPORTED in .github/workflows/pkg-installer.yml
@@ -801,6 +843,7 @@ export HOMEBREW_OS_VERSION
 export HOMEBREW_MACOS_VERSION
 export HOMEBREW_MACOS_VERSION_NUMERIC
 export HOMEBREW_MACOS_NEWEST_UNSUPPORTED
+export HOMEBREW_MACOS_NEWEST_SUPPORTED
 export HOMEBREW_MACOS_OLDEST_SUPPORTED
 export HOMEBREW_MACOS_OLDEST_ALLOWED
 export HOMEBREW_USER_AGENT
@@ -1042,6 +1085,22 @@ then
 else
   export HOMEBREW_GITHUB_PACKAGES_AUTH="Bearer QQ=="
 fi
+
+# Avoid picking up any random `sudo` in `PATH`.
+if [[ -x /usr/bin/sudo ]]
+then
+  SUDO=/usr/bin/sudo
+else
+  # Do this after ensuring we're using default Bash builtins.
+  SUDO="$(command -v sudo 2>/dev/null)"
+fi
+
+# Reset sudo timestamp to avoid running unauthorized sudo commands
+if [[ -n "${SUDO}" ]]
+then
+  "${SUDO}" --reset-timestamp 2>/dev/null || true
+fi
+unset SUDO
 
 if [[ -n "${HOMEBREW_BASH_COMMAND}" ]]
 then

@@ -225,7 +225,7 @@ RSpec.describe Cask::Installer, :cask do
 
       it "installs cask" do
         source_caffeine = Cask::CaskLoader.load(path)
-        expect(Homebrew::API::Cask).to receive(:source_download).once.and_return(source_caffeine)
+        expect(Homebrew::API::Cask).to receive(:source_download_cask).once.and_return(source_caffeine)
 
         caffeine = Cask::CaskLoader.load(path)
         expect(caffeine).to receive(:loaded_from_api?).once.and_return(true)
@@ -293,7 +293,7 @@ RSpec.describe Cask::Installer, :cask do
 
       it "uninstalls cask" do
         source_caffeine = Cask::CaskLoader.load(path)
-        expect(Homebrew::API::Cask).to receive(:source_download).twice.and_return(source_caffeine)
+        expect(Homebrew::API::Cask).to receive(:source_download_cask).twice.and_return(source_caffeine)
 
         caffeine = Cask::CaskLoader.load(path)
         expect(caffeine).to receive(:loaded_from_api?).twice.and_return(true)

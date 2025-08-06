@@ -85,7 +85,7 @@ class BuildOptions
   # ### Example
   #
   # ```ruby
-  # args << "--some-beta" if build.head?
+  # args << "--some-feature" if build.stable?
   # ```
   def stable?
     !head?

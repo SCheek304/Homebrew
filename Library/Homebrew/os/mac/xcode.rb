@@ -15,10 +15,10 @@ module OS
       # This may be a beta version for a beta macOS.
       sig { params(macos: MacOSVersion).returns(String) }
       def self.latest_version(macos: MacOS.version)
-        latest_stable = "15.4"
+        macos = macos.strip_patch
         case macos
-        when "15" then "16.0"
-        when "14" then latest_stable
+        when "15" then "16.4"
+        when "14" then "16.2"
         when "13" then "15.2"
         when "12" then "14.2"
         when "11" then "13.2.1"
@@ -28,10 +28,10 @@ module OS
         when "10.12" then "9.2"
         when "10.11" then "8.2.1"
         else
-          raise "macOS '#{MacOS.version}' is invalid" unless OS::Mac.version.prerelease?
+          raise "macOS '#{macos}' is invalid" unless macos.prerelease?
 
-          # Default to newest known version of Xcode for unreleased macOS versions.
-          latest_stable
+          # Assume matching yearly Xcode release
+          "#{macos}.0"
         end
       end
 
@@ -41,7 +41,8 @@ module OS
       # also in beta).
       sig { returns(String) }
       def self.minimum_version
-        case MacOS.version
+        macos = MacOS.version
+        case macos
         when "15" then "16.0"
         when "14" then "15.0"
         when "13" then "14.1"
@@ -51,7 +52,9 @@ module OS
         when "10.14" then "10.2"
         when "10.13" then "9.0"
         when "10.12" then "8.0"
-        else "7.3"
+        when "10.11" then "7.3"
+        else
+          "#{macos}.0"
         end
       end
 
@@ -225,10 +228,8 @@ module OS
         detect_version_from_clang_version
       end
 
-      sig { returns(String) }
-      def self.detect_version_from_clang_version
-        version = ::DevelopmentTools.clang_version
-
+      sig { params(version: ::Version).returns(String) }
+      def self.detect_version_from_clang_version(version = ::DevelopmentTools.clang_version)
         return "dunno" if version.null?
 
         # This logic provides a fake Xcode version based on the
@@ -255,8 +256,9 @@ module OS
         when "13.1.6" then "13.4.1"
         when "14.0.0" then "14.2"
         when "14.0.3" then "14.3.1"
-        when "16.0.0" then "16.0"
-        else               "15.4"
+        when "15.0.0" then "15.4"
+        when "16.0.0" then "16.2"
+        else               "26.0"
         end
       end
 
@@ -355,8 +357,9 @@ module OS
       sig { returns(String) }
       def self.latest_clang_version
         case MacOS.version
-        when "15" then "1600.0.20.10"
-        when "14" then "1500.3.9.4"
+        when "26" then "1700.3.9.908"
+        when "15" then "1700.0.13.5"
+        when "14" then "1600.0.26.6"
         when "13" then "1500.1.0.2.5"
         when "12"    then "1400.0.29.202"
         when "11"    then "1300.0.29.30"
@@ -373,7 +376,8 @@ module OS
       # that macOS version.
       sig { returns(String) }
       def self.minimum_version
-        case MacOS.version
+        macos = MacOS.version
+        case macos
         when "15" then "16.0.0"
         when "14" then "15.0.0"
         when "13" then "14.0.0"
@@ -383,7 +387,9 @@ module OS
         when "10.14" then "10.0.0"
         when "10.13" then "9.0.0"
         when "10.12" then "8.0.0"
-        else              "7.3.0"
+        when "10.11" then "7.3.0"
+        else
+          "#{macos}.0.0"
         end
       end
 
@@ -410,7 +416,10 @@ module OS
 
       sig { returns(T.nilable(String)) }
       def self.detect_version_from_clang_version
-        detect_clang_version&.sub(/^(\d+)0(\d)\./, "\\1.\\2.")
+        clang_version = detect_clang_version
+        return if clang_version.nil?
+
+        MacOS::Xcode.detect_version_from_clang_version(Version.new(clang_version))
       end
 
       # Version string (a pretty long one) of the CLT package.

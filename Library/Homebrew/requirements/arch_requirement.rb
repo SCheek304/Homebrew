@@ -1,4 +1,4 @@
-# typed: true # rubocop:todo Sorbet/StrictSigil
+# typed: strict
 # frozen_string_literal: true
 
 require "requirement"
@@ -7,10 +7,14 @@ require "requirement"
 class ArchRequirement < Requirement
   fatal true
 
+  @arch = T.let(nil, T.nilable(Symbol))
+
+  sig { returns(T.nilable(Symbol)) }
   attr_reader :arch
 
+  sig { params(tags: T::Array[Symbol]).void }
   def initialize(tags)
-    @arch = tags.shift
+    @arch = T.let(tags.shift, T.nilable(Symbol))
     super
   end
 

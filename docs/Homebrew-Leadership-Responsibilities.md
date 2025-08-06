@@ -34,12 +34,12 @@ last_review_date: "1970-01-01"
   - Ask someone to bring a conference/table microphone for people to be able to remotely participate in AGM
   - Reconsider current OpenCollective invoice hourly rates based on e.g. inflation
 - February after the AGM:
-  - Add the minutes of the AGM to Homebrew/brew's [governance archives](https://github.com/Homebrew/brew/tree/master/docs/governance)
+  - Add the minutes of the AGM to Homebrew/brew's [governance archives](https://github.com/Homebrew/brew/tree/HEAD/docs/governance)
   - Create an [issue in Homebrew/brew](https://github.com/Homebrew/brew/issues?q=is%3Aissue+in%3Atitle+membership+) to survey members who did not vote in the election whether they wish to remain or step down as members
     - Members that are not maintainers should be a least one of:
       - An current or previously active maintainer, PLC/TSC member or Project Leader
       - A long-standing member of the Homebrew community (e.g. been submitting good bug reports for over two years)
-    - After the survey issue is closed, list the current year's members in a new file within the [governance archives](https://github.com/Homebrew/brew/tree/master/docs/governance)
+    - After the survey issue is closed, list the current year's members in a new file within the [governance archives](https://github.com/Homebrew/brew/tree/HEAD/docs/governance)
 - October: arrange in-person AGM
   - Offer to pay for Homebrew maintainers who are at least one of:
     - active Homebrew maintainers (i.e. not just contributors)

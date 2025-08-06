@@ -112,7 +112,7 @@ module Language
       module_function
 
       # A regex to match potential shebang permutations.
-      PYTHON_SHEBANG_REGEX = %r{^#! ?/usr/bin/(?:env )?python(?:[23](?:\.\d{1,2})?)?( |$)}
+      PYTHON_SHEBANG_REGEX = %r{\A#! ?(?:/usr/bin/(?:env )?)?python(?:[23](?:\.\d{1,2})?)?( |$)}
 
       # The length of the longest shebang matching `SHEBANG_REGEX`.
       PYTHON_SHEBANG_MAX_LENGTH = T.let("#! /usr/bin/env pythonx.yyy ".length, Integer)
@@ -399,7 +399,7 @@ module Language
             if t.is_a?(Resource)
               t.stage do
                 target = Pathname.pwd
-                target /= t.downloader.basename if t.url&.end_with?("-none-any.whl")
+                target /= t.downloader.basename if t.url&.match?("[.-]py3[^-]*-none-any.whl$")
                 do_install(target, build_isolation:)
               end
             else

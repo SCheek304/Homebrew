@@ -10,7 +10,8 @@ module Homebrew
   # Helper class for cleaning up the Homebrew cache.
   class Cleanup
     CLEANUP_DEFAULT_DAYS = Homebrew::EnvConfig.cleanup_periodic_full_days.to_i.freeze
-    private_constant :CLEANUP_DEFAULT_DAYS
+    GH_ACTIONS_ARTIFACT_CLEANUP_DAYS = 3
+    private_constant :CLEANUP_DEFAULT_DAYS, :GH_ACTIONS_ARTIFACT_CLEANUP_DAYS
 
     class << self
       sig { params(pathname: Pathname).returns(T::Boolean) }
@@ -67,8 +68,6 @@ module Homebrew
       end
 
       private
-
-      GH_ACTIONS_ARTIFACT_CLEANUP_DAYS = 3
 
       sig { params(pathname: Pathname, scrub: T::Boolean).returns(T::Boolean) }
       def stale_gh_actions_artifact?(pathname, scrub)
@@ -152,6 +151,12 @@ module Homebrew
           formula_excluded_versions_from_cleanup = excluded_versions_from_cleanup(formula)
           return false if formula_excluded_versions_from_cleanup.include?(version.to_s)
 
+          if pathname.to_s.include?("_bottle_manifest")
+            excluded_version = version.to_s
+            excluded_version.sub!(/-\d+$/, "")
+            return false if formula_excluded_versions_from_cleanup.include?(excluded_version)
+          end
+
           # We can't determine an installed rebuild and parsing manifest version cannot be reliably done.
           return false unless formula.latest_version_installed?
 
@@ -190,7 +195,7 @@ module Homebrew
         return false unless (name = basename.to_s[/\A(.*?)--/, 1])
 
         cask = begin
-          Cask::CaskLoader.load(name)
+          Cask::CaskLoader.load(name, warn: false)
         rescue Cask::CaskError
           nil
         end
@@ -253,8 +258,8 @@ module Homebrew
       return if Homebrew::EnvConfig.no_env_hints?
       return if Homebrew::EnvConfig.no_install_cleanup?
 
-      puts "Disable this behaviour by setting HOMEBREW_NO_INSTALL_CLEANUP."
-      puts "Hide these hints with HOMEBREW_NO_ENV_HINTS (see `man brew`)."
+      puts "Disable this behaviour by setting `HOMEBREW_NO_INSTALL_CLEANUP=1`."
+      puts "Hide these hints with `HOMEBREW_NO_ENV_HINTS=1` (see `man brew`)."
     end
 
     def self.puts_no_install_cleanup_disable_message_if_not_already!
@@ -310,8 +315,8 @@ module Homebrew
         end
 
         if ENV["HOMEBREW_AUTOREMOVE"].present?
-          opoo "HOMEBREW_AUTOREMOVE is now a no-op as it is the default behaviour. " \
-               "Set HOMEBREW_NO_AUTOREMOVE=1 to disable it."
+          opoo "`$HOMEBREW_AUTOREMOVE` is now a no-op as it is the default behaviour. " \
+               "Set `HOMEBREW_NO_AUTOREMOVE=1` to disable it."
         end
         Cleanup.autoremove(dry_run: dry_run?) unless Homebrew::EnvConfig.no_autoremove?
 
@@ -553,7 +558,7 @@ module Homebrew
       return unless bootsnap.directory?
 
       bootsnap.each_child do |subdir|
-        cleanup_path(subdir) { FileUtils.rm_r(subdir) } if subdir.basename.to_s != Homebrew.bootsnap_key
+        cleanup_path(subdir) { FileUtils.rm_r(subdir) } if subdir.basename.to_s != Homebrew::Bootsnap.key
       end
     end
 

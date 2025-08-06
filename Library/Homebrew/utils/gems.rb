@@ -5,12 +5,12 @@
 # work as the first item in `brew.rb` so we can load gems with Bundler when
 # needed before anything else is loaded (e.g. `json`).
 
-require "English"
+Homebrew::FastBootRequire.from_rubylibdir("English")
 
 module Homebrew
   # Keep in sync with the `Gemfile.lock`'s BUNDLED WITH.
   # After updating this, run `brew vendor-gems --update=--bundler`.
-  HOMEBREW_BUNDLER_VERSION = "2.5.20"
+  HOMEBREW_BUNDLER_VERSION = "2.6.8" # Pinned to <2.6.9 until Ruby 3.5.
 
   # Bump this whenever a committed vendored gem is later added to or exclusion removed from gitignore.
   # This will trigger it to reinstall properly if `brew install-bundler-gems` needs it.
@@ -89,10 +89,14 @@ module Homebrew
 
     # Match where our bundler gems are.
     gem_home = "#{RUBY_BUNDLE_VENDOR_DIRECTORY}/#{RbConfig::CONFIG["ruby_version"]}"
+    homebrew_cache = ENV.fetch("HOMEBREW_CACHE", nil)
+    gem_cache = "#{homebrew_cache}/gem-spec-cache" if homebrew_cache
+
     Gem.paths = {
-      "GEM_HOME" => gem_home,
-      "GEM_PATH" => gem_home,
-    }
+      "GEM_HOME"       => gem_home,
+      "GEM_PATH"       => gem_home,
+      "GEM_SPEC_CACHE" => gem_cache,
+    }.compact
 
     # Set TMPDIR so Xcode's `make` doesn't fall back to `/var/tmp/`,
     # which may be not user-writable.
@@ -110,6 +114,7 @@ module Homebrew
     # We don't do this unless requested as some formulae may invoke system Ruby instead of ours.
     ENV["GEM_HOME"] = gem_home
     ENV["GEM_PATH"] = gem_home
+    ENV["GEM_SPEC_CACHE"] = gem_cache if gem_cache
   end
 
   def self.install_gem!(name, version: nil, setup_gem_environment: true)
@@ -222,6 +227,7 @@ module Homebrew
     old_path = ENV.fetch("PATH", nil)
     old_gem_path = ENV.fetch("GEM_PATH", nil)
     old_gem_home = ENV.fetch("GEM_HOME", nil)
+    old_gem_spec_cache = ENV.fetch("GEM_SPEC_CACHE", nil)
     old_bundle_gemfile = ENV.fetch("BUNDLE_GEMFILE", nil)
     old_bundle_with = ENV.fetch("BUNDLE_WITH", nil)
     old_bundle_frozen = ENV.fetch("BUNDLE_FROZEN", nil)
@@ -303,6 +309,7 @@ module Homebrew
           exec bundle, "install", out: :err
         end)
         if $CHILD_STATUS.success?
+          Homebrew::Bootsnap.reset! if defined?(Homebrew::Bootsnap) # Gem install can run before Bootsnap loads
           true
         else
           message = <<~EOS
@@ -342,6 +349,7 @@ module Homebrew
       ENV["PATH"] = old_path
       ENV["GEM_PATH"] = old_gem_path
       ENV["GEM_HOME"] = old_gem_home
+      ENV["GEM_SPEC_CACHE"] = old_gem_spec_cache
       ENV["BUNDLE_GEMFILE"] = old_bundle_gemfile
       ENV["BUNDLE_WITH"] = old_bundle_with
       ENV["BUNDLE_FROZEN"] = old_bundle_frozen

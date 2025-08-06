@@ -64,12 +64,8 @@ module Homebrew
     sig { returns(T::Boolean) }
     def self.enabled?
       return false if Homebrew::EnvConfig.no_verify_attestations?
-      return true if Homebrew::EnvConfig.verify_attestations?
-      return false if ENV.fetch("CI", false)
-      return false if OS.unsupported_configuration?
 
-      # Always check credentials last to avoid unnecessary credential extraction.
-      (Homebrew::EnvConfig.developer? || Homebrew::EnvConfig.devcmdrun?) && GitHub::API.credentials.present?
+      Homebrew::EnvConfig.verify_attestations?
     end
 
     # Returns a path to a suitable `gh` executable for attestation verification.
@@ -226,7 +222,7 @@ module Homebrew
         attestation = check_attestation bottle, HOMEBREW_CORE_REPO
         return attestation
       rescue MissingAttestationError
-        odebug "falling back on backfilled attestation for #{bottle}"
+        odebug "falling back on backfilled attestation for #{bottle.filename}"
 
         # Our backfilled attestation is a little unique: the subject is not just the bottle
         # filename, but also has the bottle's hosted URL hash prepended to it.

@@ -48,7 +48,7 @@ module Homebrew
               if rack.directory?
                 versions = rack.subdirs.map(&:basename)
                 puts <<~EOS
-                  #{keg.name} #{versions.to_sentence} #{(versions.count == 1) ? "is" : "are"} still installed.
+                  #{keg.name} #{versions.to_sentence} #{versions.one? ? "is" : "are"} still installed.
                   To remove all versions, run:
                     brew uninstall --force #{keg.name}
                 EOS
@@ -67,7 +67,18 @@ module Homebrew
               end
 
               unversioned_name = f.name.gsub(/@.+$/, "")
-              maybe_paths = Dir.glob("#{f.etc}/*#{unversioned_name}*")
+              maybe_paths = Dir.glob("#{f.etc}/#{unversioned_name}*")
+              excluded_names = Homebrew::API::Formula.all_formulae.keys
+              maybe_paths = maybe_paths.reject do |path|
+                # Remove extension only if a file
+                # (e.g. directory with name "openssl@1.1" will be trimmed to "openssl@1")
+                basename = if File.directory?(path)
+                  File.basename(path)
+                else
+                  File.basename(path, ".*")
+                end
+                excluded_names.include?(basename)
+              end
               maybe_paths -= paths if paths.present?
               if maybe_paths.present?
                 puts
@@ -97,13 +108,13 @@ module Homebrew
       return if ignore_dependencies
 
       all_kegs = kegs_by_rack.values.flatten(1)
-      check_for_dependents(all_kegs, casks:, named_args:)
+      check_for_dependents!(all_kegs, casks:, named_args:)
     rescue MethodDeprecatedError
       # Silently ignore deprecations when uninstalling.
       nil
     end
 
-    def self.check_for_dependents(kegs, casks: [], named_args: [])
+    def self.check_for_dependents!(kegs, casks: [], named_args: [])
       return false unless (result = InstalledDependents.find_some_installed_dependents(kegs, casks:))
 
       DependentsMessage.new(*result, named_args:).output
@@ -122,7 +133,7 @@ module Homebrew
       def output
         ofail <<~EOS
           Refusing to uninstall #{reqs.to_sentence}
-          because #{(reqs.count == 1) ? "it" : "they"} #{are_required_by_deps}.
+          because #{reqs.one? ? "it" : "they"} #{are_required_by_deps}.
           You can override this and force removal with:
             #{sample_command}
         EOS
@@ -135,8 +146,8 @@ module Homebrew
       end
 
       def are_required_by_deps
-        "#{(reqs.count == 1) ? "is" : "are"} required by #{deps.to_sentence}, " \
-          "which #{(deps.count == 1) ? "is" : "are"} currently installed"
+        "#{reqs.one? ? "is" : "are"} required by #{deps.to_sentence}, " \
+          "which #{deps.one? ? "is" : "are"} currently installed"
       end
     end
 

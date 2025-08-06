@@ -24,6 +24,9 @@ class Homebrew::DevCmd::Tests::Args < Homebrew::CLI::Args
   def generic?; end
 
   sig { returns(T::Boolean) }
+  def no_parallel?; end
+
+  sig { returns(T::Boolean) }
   def online?; end
 
   sig { returns(T.nilable(String)) }

@@ -36,7 +36,7 @@ Linux distribution without requiring `sudo`.
 
 **cask**
 
-: Homebrew package definition that installs macOS native applications
+: Homebrew package definition that installs pre-compiled binaries built and signed by upstream
 
 **prefix**
 
@@ -133,7 +133,7 @@ If no search term is provided, all locally available formulae are listed.
 ## CUSTOM EXTERNAL COMMANDS
 
 Homebrew, like `git`(1), supports external commands. These are executable
-scripts that reside somewhere in the `PATH`, named `brew-`<cmdname> or
+scripts that reside somewhere in the `$PATH`, named `brew-`<cmdname> or
 `brew-`<cmdname>`.rb`, which can be invoked like `brew` <cmdname>. This
 allows you to create your own commands without modifying Homebrew's internals.
 
@@ -184,10 +184,10 @@ files:
 
 User-specific environment files take precedence over prefix-specific files and
 prefix-specific files take precedence over system-wide files (unless
-`HOMEBREW_SYSTEM_ENV_TAKES_PRIORITY` is set, see below).
+`$HOMEBREW_SYSTEM_ENV_TAKES_PRIORITY` is set, see below).
 
-Note that these files do not support shell variable expansion e.g. `$HOME` or
-command execution e.g. `$(cat file)`.
+Note that these files do not support shell variable expansion (e.g. `$HOME`) or
+command execution (e.g. `$(cat file)`).
 
 <%= environment_variables %>
 

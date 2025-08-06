@@ -59,6 +59,7 @@ TEST_DIRECTORIES = [
   CoreTap.instance.path/"Formula",
   HOMEBREW_CACHE,
   HOMEBREW_CACHE_FORMULA,
+  HOMEBREW_CACHE/"api",
   HOMEBREW_CELLAR,
   HOMEBREW_LOCKS,
   HOMEBREW_LOGS,
@@ -171,6 +172,14 @@ RSpec.configure do |config|
     skip "Requires homebrew/core to be tapped." unless Dir.exist?(core_tap_path)
   end
 
+  config.before(:each, :needs_systemd) do
+    skip "No SystemD found." unless which("systemctl")
+  end
+
+  config.before(:each, :needs_daemon_manager) do
+    skip "No LaunchCTL or SystemD found." if !which("systemctl") && !which("launchctl")
+  end
+
   config.before do |example|
     next if example.metadata.key?(:needs_network)
     next if example.metadata.key?(:needs_utils_curl)
@@ -241,6 +250,11 @@ RSpec.configure do |config|
     @__stderr = $stderr.clone
     @__stdin = $stdin.clone
 
+    # Link original API cache files to test cache directory.
+    Pathname("#{ENV.fetch("HOMEBREW_CACHE")}/api").glob("*.json").each do |path|
+      FileUtils.ln_s path, HOMEBREW_CACHE/"api/#{path.basename}"
+    end
+
     begin
       if example.metadata.keys.exclude?(:focus) && !ENV.key?("HOMEBREW_VERBOSE_TESTS")
         $stdout.reopen(File::NULL)
@@ -284,9 +298,8 @@ RSpec.configure do |config|
         HOMEBREW_PREFIX/"Frameworks",
         HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-cask",
         HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-bar",
-        HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-bundle",
         HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-foo",
-        HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-services",
+        HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-test-bot",
         HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-shallow",
         HOMEBREW_LIBRARY/"PinnedTaps",
         HOMEBREW_REPOSITORY/".git",
@@ -298,6 +311,9 @@ RSpec.configure do |config|
         CoreTap.instance.path/"style_exceptions",
         CoreTap.instance.path/"pypi_formula_mappings.json",
         *Pathname.glob("#{HOMEBREW_CELLAR}/*/"),
+        HOMEBREW_LIBRARY_PATH/"test/.vscode",
+        HOMEBREW_LIBRARY_PATH/"test/.cursor",
+        HOMEBREW_LIBRARY_PATH/"test/Library",
       ]
 
       files_after_test = Test::Helper::Files.find_files

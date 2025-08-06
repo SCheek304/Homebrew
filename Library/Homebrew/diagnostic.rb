@@ -111,17 +111,21 @@ module Homebrew
         supported_configuration_checks + build_from_source_checks
       end
 
-      def please_create_pull_requests(what = "unsupported configuration")
+      sig { params(tier: T.any(Integer, String, Symbol)).returns(T.nilable(String)) }
+      def support_tier_message(tier:)
+        return if tier.to_s == "1"
+
+        tier_title, tier_slug, tier_issues = if tier.to_s == "unsupported"
+          ["Unsupported", "unsupported", "Do not report any"]
+        else
+          ["Tier #{tier}", "tier-#{tier.to_s.downcase}", "You can report Tier #{tier} unrelated"]
+        end
+
         <<~EOS
-          It is expected behaviour that some formulae will fail to build in this #{what}.
-          It is expected behaviour that Homebrew will be buggy and slow.
-          Do not create any issues about this on Homebrew's GitHub repositories.
-          Do not create any issues even if you think this message is unrelated.
-          Any opened issues will be immediately closed without response.
-          Do not ask for help from Homebrew or its maintainers on social media.
-          You may ask for help in Homebrew's discussions but are unlikely to receive a response.
-          Try to figure out the problem yourself and submit a fix as a pull request.
-          We will review it but may or may not accept it.
+          This is a #{tier_title} configuration:
+            #{Formatter.url("https://docs.brew.sh/Support-Tiers##{tier_slug}")}
+          #{Formatter.bold("#{tier_issues} issues to Homebrew/* repositories!")}
+          Read the above document instead before opening any issues or PRs.
         EOS
       end
 
@@ -204,6 +208,7 @@ module Homebrew
         # with a short description of the software they come with.
         allow_list = [
           "libfuse.2.dylib", # MacFuse
+          "libfuse3.*.dylib", # MacFuse
           "libfuse_ino64.2.dylib", # MacFuse
           "libmacfuse_i32.2.dylib", # OSXFuse MacFuse compatibility layer
           "libmacfuse_i64.2.dylib", # OSXFuse MacFuse compatibility layer
@@ -261,6 +266,7 @@ module Homebrew
         # with a short description of the software they come with.
         allow_list = [
           "fuse.pc", # OSXFuse/MacFuse
+          "fuse3.pc", # OSXFuse/MacFuse
           "macfuse.pc", # OSXFuse MacFuse compatibility layer
           "osxfuse.pc", # OSXFuse
           "libntfs-3g.pc", # NTFS-3G
@@ -301,6 +307,7 @@ module Homebrew
         allow_list = [
           "fuse.h", # MacFuse
           "fuse/**/*.h", # MacFuse
+          "fuse3/**/*.h", # MacFuse
           "macfuse/**/*.h", # OSXFuse MacFuse compatibility layer
           "osxfuse/**/*.h", # OSXFuse
           "ntfs/**/*.h", # NTFS-3G
@@ -343,7 +350,6 @@ module Homebrew
             sudo chmod +t #{HOMEBREW_TEMP}
         EOS
       end
-      alias generic_check_tmpdir_sticky_bit check_tmpdir_sticky_bit
 
       def check_exist_directories
         return if HOMEBREW_PREFIX.writable?
@@ -426,10 +432,12 @@ module Homebrew
           end
         end
 
+        @user_path_1_done = true
         message unless message.empty?
       end
 
       def check_user_path_2
+        check_user_path_1 unless defined?(@user_path_1_done)
         return if @seen_prefix_bin
 
         <<~EOS
@@ -440,6 +448,7 @@ module Homebrew
       end
 
       def check_user_path_3
+        check_user_path_1 unless defined?(@user_path_1_done)
         return if @seen_prefix_sbin
 
         # Don't complain about sbin not being in the path if it doesn't exist
@@ -466,7 +475,7 @@ module Homebrew
                           which resolves to: #{HOMEBREW_CELLAR.realpath}
 
           The recommended Homebrew installations are either:
-          (A) Have Cellar be a real directory inside of your HOMEBREW_PREFIX
+          (A) Have Cellar be a real directory inside of your `$HOMEBREW_PREFIX`
           (B) Symlink "bin/brew" into your prefix, but don't symlink "Cellar".
 
           Older installations of Homebrew may have created a symlinked Cellar, but this can
@@ -539,7 +548,7 @@ module Homebrew
         core_cask_tap = CoreCaskTap.instance
         return unless core_cask_tap.installed?
 
-        broken_tap(core_cask_tap) || examine_git_origin(core_cask_tap.git_repository, core_cask_tap.remote)
+        broken_tap(core_cask_tap) || examine_git_origin(core_cask_tap.git_repository, T.must(core_cask_tap.remote))
       end
 
       sig { returns(T.nilable(String)) }
@@ -565,6 +574,10 @@ module Homebrew
       def check_deprecated_official_taps
         tapped_deprecated_taps =
           Tap.select(&:official?).map(&:repository) & DEPRECATED_OFFICIAL_TAPS
+
+        # TODO: remove this once it's no longer in the default GitHub Actions image
+        tapped_deprecated_taps -= ["bundle"] if GitHub::Actions.env_set?
+
         return if tapped_deprecated_taps.empty?
 
         <<~EOS
@@ -574,7 +587,7 @@ module Homebrew
         EOS
       end
 
-      def __check_linked_brew(formula)
+      def __check_linked_brew!(formula)
         formula.installed_prefixes.each do |prefix|
           prefix.find do |src|
             next if src == prefix
@@ -690,7 +703,7 @@ module Homebrew
             If this is a surprise to you, then you should stash these modifications.
             Stashing returns Homebrew to a pristine state but can be undone
             should you later need to do so for some reason.
-              cd #{path} && git stash -u && git clean -d -f
+              git -C "#{path}" stash -u && git -C "${path}" clean -d -f
           EOS
 
           modified = status.split("\n")
@@ -824,9 +837,10 @@ module Homebrew
         <<~EOS
           Your Homebrew's prefix is not #{Homebrew::DEFAULT_PREFIX}.
 
-          Many of Homebrew's bottles (binary packages) can only be used with the default prefix.
+          Most of Homebrew's bottles (binary packages) can only be used with the default prefix.
           Consider uninstalling Homebrew and reinstalling into the default prefix.
-          #{please_create_pull_requests}
+
+          #{support_tier_message(tier: 3)}
         EOS
       end
 
@@ -894,24 +908,21 @@ module Homebrew
         EOS
       end
 
+      def check_deprecated_cask_taps
+        tapped_caskroom_taps = ::Tap.select { |t| t.user == "caskroom" || t.name == "phinze/cask" }
+                                    .map(&:name)
+        return if tapped_caskroom_taps.empty?
+
+        <<~EOS
+          You have the following deprecated Cask taps installed:
+            #{tapped_caskroom_taps.join("\n  ")}
+          Please remove them with:
+            brew untap #{tapped_caskroom_taps.join(" ")}
+        EOS
+      end
+
       def check_cask_software_versions
         add_info "Homebrew Version", HOMEBREW_VERSION
-        add_info "macOS", MacOS.full_version
-        add_info "SIP", begin
-          csrutil = "/usr/bin/csrutil"
-          if File.executable?(csrutil)
-            Open3.capture2(csrutil, "status")
-                 .first
-                 .gsub("This is an unsupported configuration, likely to break in " \
-                       "the future and leave your machine in an unknown state.", "")
-                 .gsub("System Integrity Protection status: ", "")
-                 .delete("\t.")
-                 .capitalize
-                 .strip
-          else
-            "N/A"
-          end
-        end
 
         nil
       end
@@ -998,6 +1009,10 @@ module Homebrew
       end
 
       def check_cask_xattr
+        # If quarantine is not available, a warning is already shown by check_cask_quarantine_support so just return
+        return unless Cask::Quarantine.available?
+        return "Unable to find `xattr`." unless File.exist?("/usr/bin/xattr")
+
         result = system_command "/usr/bin/xattr", args: ["-h"]
 
         return if result.status.success?
@@ -1033,6 +1048,8 @@ module Homebrew
           "No Cask quarantine support available: there's no working version of `xattr` on this system."
         when :no_swift
           "No Cask quarantine support available: there's no available version of `swift` on this system."
+        when :linux
+          "No Cask quarantine support available: not available on Linux."
         else
           "No Cask quarantine support available: unknown reason."
         end

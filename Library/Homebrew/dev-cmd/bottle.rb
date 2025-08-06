@@ -227,7 +227,7 @@ module Homebrew
       private
 
       sig {
-        params(string: String, keg: Keg, ignores: T::Array[String],
+        params(string: String, keg: Keg, ignores: T::Array[Regexp],
                formula_and_runtime_deps_names: T.nilable(T::Array[String])).returns(T::Boolean)
       }
       def keg_contain?(string, keg, ignores, formula_and_runtime_deps_names = nil)
@@ -354,9 +354,7 @@ module Homebrew
         end
         return if gnu_tar_formula.blank?
 
-        ensure_formula_installed!(gnu_tar_formula, reason: "bottling")
-
-        gnu_tar_formula
+        gnu_tar_formula.ensure_installed!(reason: "bottling")
       end
 
       sig { params(mtime: String, default_tar: T::Boolean).returns([String, T::Array[String]]) }
@@ -373,35 +371,17 @@ module Homebrew
         [gnu_tar(gnu_tar_formula), reproducible_gnutar_args(mtime)].freeze
       end
 
-      sig { params(formula: T.untyped).returns(T::Array[T.untyped]) }
+      sig { params(formula: Formula).returns(T::Array[Regexp]) }
       def formula_ignores(formula)
-        ignores = []
-        cellar_regex = Regexp.escape(HOMEBREW_CELLAR)
-        prefix_regex = Regexp.escape(HOMEBREW_PREFIX)
-
         # Ignore matches to go keg, because all go binaries are statically linked.
         any_go_deps = formula.deps.any? do |dep|
           Version.formula_optionally_versioned_regex(:go).match?(dep.name)
         end
-        if any_go_deps
-          go_regex = Version.formula_optionally_versioned_regex(:go, full: false)
-          ignores << %r{#{cellar_regex}/#{go_regex}/[\d.]+/libexec}
-        end
+        return [] unless any_go_deps
 
-        # TODO: Refactor and move to extend/os
-        # rubocop:disable Homebrew/MoveToExtendOS
-        ignores << case formula.name
-        # On Linux, GCC installation can be moved so long as the whole directory tree is moved together:
-        # https://gcc-help.gcc.gnu.narkive.com/GnwuCA7l/moving-gcc-from-the-installation-path-is-it-allowed.
-        when Version.formula_optionally_versioned_regex(:gcc)
-          Regexp.union(%r{#{cellar_regex}/gcc}, %r{#{prefix_regex}/opt/gcc}) if OS.linux?
-        # binutils is relocatable for the same reason: https://github.com/Homebrew/brew/pull/11899#issuecomment-906804451.
-        when Version.formula_optionally_versioned_regex(:binutils)
-          %r{#{cellar_regex}/binutils} if OS.linux?
-        end
-        # rubocop:enable Homebrew/MoveToExtendOS
-
-        ignores.compact
+        cellar_regex = Regexp.escape(HOMEBREW_CELLAR)
+        go_regex = Version.formula_optionally_versioned_regex(:go, full: false)
+        Array(%r{#{cellar_regex}/#{go_regex}/[\d.]+/libexec})
       end
 
       sig { params(formula: Formula).void }
@@ -693,7 +673,7 @@ module Homebrew
                   "filename"        => filename.url_encode,
                   "local_filename"  => filename.to_s,
                   "sha256"          => sha256,
-                  "tab"             => tab.to_bottle_hash,
+                  "tab"             => T.must(tab).to_bottle_hash,
                   "path_exec_files" => path_exec_files,
                   "all_files"       => all_files,
                   "installed_size"  => installed_size,
@@ -741,7 +721,7 @@ module Homebrew
           all_bottle = !args.no_all_checks? &&
                        (!old_bottle_spec_matches || bottle.rebuild != old_bottle_spec.rebuild) &&
                        tag_hashes.count > 1 &&
-                       tag_hashes.uniq { |tag_hash| "#{tag_hash["cellar"]}-#{tag_hash["sha256"]}" }.count == 1
+                       tag_hashes.uniq { |tag_hash| "#{tag_hash["cellar"]}-#{tag_hash["sha256"]}" }.one?
 
           old_all_bottle = old_bottle_spec.tag?(Utils::Bottles.tag(:all))
           if !all_bottle && old_all_bottle && !args.no_all_checks?

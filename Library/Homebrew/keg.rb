@@ -4,7 +4,7 @@
 require "keg_relocate"
 require "language/python"
 require "lock_file"
-require "extend/cachable"
+require "cachable"
 
 # Installation prefix of a formula.
 class Keg
@@ -94,6 +94,8 @@ class Keg
   ELISP_EXTENSIONS = %w[.el .elc].freeze
   PYC_EXTENSIONS = %w[.pyc .pyo].freeze
   LIBTOOL_EXTENSIONS = %w[.la .lai].freeze
+
+  KEEPME_FILE = ".keepme"
 
   # @param path if this is a file in a keg, returns the containing {Keg} object.
   def self.for(path)
@@ -485,7 +487,7 @@ class Keg
            /^ruby/
         :mkpath
       else
-        # Everything else is symlinked to the cellar
+        # Everything else is symlinked to the Cellar
         :link
       end
     end
@@ -566,6 +568,15 @@ class Keg
       next unless manpage.file?
 
       content = manpage.read
+      unless content.valid_encoding?
+        # Occasionally, a manpage might not be encoded as UTF-8. ISO-8859-1 is a
+        # common alternative that's worth trying in this case.
+        content = File.read(manpage, encoding: "ISO-8859-1")
+
+        # If the encoding is still invalid, we can't do anything about it.
+        next unless content.valid_encoding?
+      end
+
       content = content.gsub(generated_regex, "")
       content = content.lines.map do |line|
         next line unless line.start_with?(".TH")
@@ -581,6 +592,14 @@ class Keg
 
       manpage.atomic_write(content)
     end
+  end
+
+  sig { returns(T::Array[String]) }
+  def keepme_refs
+    keepme = path/KEEPME_FILE
+    return [] if !keepme.exist? || !keepme.readable?
+
+    keepme.readlines.select { |ref| File.exist?(ref.strip) }
   end
 
   def binary_executable_or_library_files

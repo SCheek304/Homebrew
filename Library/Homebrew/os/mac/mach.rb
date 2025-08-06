@@ -12,11 +12,19 @@ module MachOShim
 
   delegate [:dylib_id] => :macho
 
+  def initialize(*args)
+    @macho = T.let(nil, T.nilable(MachO::MachOFile))
+    @mach_data = T.let(nil, T.nilable(T::Array[T::Hash[Symbol, T.untyped]]))
+
+    super
+  end
+
   def macho
     @macho ||= MachO.open(to_s)
   end
   private :macho
 
+  sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }
   def mach_data
     @mach_data ||= begin
       machos = []
@@ -59,7 +67,7 @@ module MachOShim
   private :mach_data
 
   # TODO: See if the `#write!` call can be delayed until
-  # we know we're not making any changes to the rpaths.
+  #       we know we're not making any changes to the rpaths.
   def delete_rpath(rpath, **options)
     candidates = rpaths(resolve_variable_references: false).select do |r|
       resolve_variable_name(r) == resolve_variable_name(rpath)

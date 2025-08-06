@@ -101,6 +101,7 @@ fetch() {
   local first_try=1
   local vendor_locations
   local temporary_path
+  local curl_exit_code=0
 
   curl_args=()
 
@@ -149,18 +150,26 @@ fetch() {
         # HOMEBREW_CURL is set by brew.sh (and isn't misspelt here)
         # shellcheck disable=SC2153
         "${HOMEBREW_CURL}" "${curl_args[@]}" -C - "${url}" -o "${temporary_path}"
-        if [[ $? -eq 33 ]]
+        curl_exit_code="$?"
+        if [[ "${curl_exit_code}" -eq 33 ]]
         then
           [[ -n "${HOMEBREW_QUIET}" ]] || echo "Trying a full download" >&2
           rm -f "${temporary_path}"
           "${HOMEBREW_CURL}" "${curl_args[@]}" "${url}" -o "${temporary_path}"
+          curl_exit_code="$?"
         fi
       else
         "${HOMEBREW_CURL}" "${curl_args[@]}" "${url}" -o "${temporary_path}"
+        curl_exit_code="$?"
       fi
 
       [[ -f "${temporary_path}" ]] && break
     done
+
+    if [[ "${curl_exit_code}" -ne 0 ]]
+    then
+      rm -f "${temporary_path}"
+    fi
 
     if [[ ! -f "${temporary_path}" ]]
     then

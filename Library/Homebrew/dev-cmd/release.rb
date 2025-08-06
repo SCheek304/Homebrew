@@ -21,6 +21,7 @@ module Homebrew
                description: "Create a major release."
         switch "--minor",
                description: "Create a minor release."
+
         conflicts "--major", "--minor"
 
         named_args :none

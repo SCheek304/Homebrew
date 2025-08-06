@@ -24,7 +24,7 @@ RSpec.describe RuboCop::Cop::FormulaAudit::Patches do
           homepage "ftp://brew.sh/foo"
           url "https://brew.sh/foo-1.0.tgz"
           def patches
-          ^^^^^^^^^^^ FormulaAudit/Patches: Use the patch DSL instead of defining a 'patches' method
+          ^^^^^^^^^^^ FormulaAudit/Patches: Use the `patch` DSL instead of defining a `patches` method
             DATA
           end
         end
@@ -39,6 +39,7 @@ RSpec.describe RuboCop::Cop::FormulaAudit::Patches do
         "http://bugs.debian.org/cgi-bin/bugreport.cgi?msg=5;filename=patch-libunac1.txt;att=1;bug=623340",
         "https://patch-diff.githubusercontent.com/raw/foo/foo-bar/pull/100.patch",
         "https://github.com/dlang/dub/commit/2c916b1a7999a050ac4970c3415ff8f91cd487aa.patch",
+        "https://bitbucket.org/multicoreware/x265_git/commits/b354c009a60bcd6d7fc04014e200a1ee9c45c167/raw",
       ]
       patch_urls.each do |patch_url|
         source = <<~EOS
@@ -78,6 +79,12 @@ RSpec.describe RuboCop::Cop::FormulaAudit::Patches do
           expect_offense_hash(message: <<~EOS.chomp, severity: :convention, line: 5, column: 4, source:)
             FormulaAudit/Patches: GitHub patches should use the full_index parameter: #{patch_url}?full_index=1
           EOS
+        elsif patch_url.start_with?("https://bitbucket.org/")
+          commit = "b354c009a60bcd6d7fc04014e200a1ee9c45c167"
+          fixed_url = "https://api.bitbucket.org/2.0/repositories/multicoreware/x265_git/diff/#{commit}"
+          expect_offense_hash(message: <<~EOS.chomp, severity: :convention, line: 5, column: 4, source:)
+            FormulaAudit/Patches: Bitbucket patches should use the API URL: #{fixed_url}
+          EOS
         end
         expected_offense.zip([inspect_source(source).last]).each do |expected, actual|
           expect(actual.message).to eq(expected[:message])
@@ -105,7 +112,7 @@ RSpec.describe RuboCop::Cop::FormulaAudit::Patches do
 
       expected_offenses = [
         {
-          message:  "FormulaAudit/Patches: Use the patch DSL instead of defining a 'patches' method",
+          message:  "FormulaAudit/Patches: Use the `patch` DSL instead of defining a `patches` method",
           severity: :convention,
           line:     4,
           column:   2,
@@ -159,7 +166,7 @@ RSpec.describe RuboCop::Cop::FormulaAudit::Patches do
         class Foo < Formula
           url 'https://brew.sh/foo-1.0.tgz'
           patch :DATA
-          ^^^^^^^^^^^ FormulaAudit/Patches: patch is missing '__END__'
+          ^^^^^^^^^^^ FormulaAudit/Patches: Patch is missing `__END__`
         end
       RUBY
     end
@@ -170,7 +177,7 @@ RSpec.describe RuboCop::Cop::FormulaAudit::Patches do
           url 'https://brew.sh/foo-1.0.tgz'
         end
         __END__
-        ^^^^^^^ FormulaAudit/Patches: patch is missing 'DATA'
+        ^^^^^^^ FormulaAudit/Patches: Patch is missing `patch :DATA`
         patch content here
       RUBY
     end

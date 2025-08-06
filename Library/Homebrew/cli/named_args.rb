@@ -147,7 +147,7 @@ module Homebrew
           {},
           T.nilable(T::Hash[
             T.nilable(Symbol),
-            T::Array[T.any(Formula, Keg, Cask::Cask, T::Array[Keg], FormulaOrCaskUnavailableError)]
+            T::Array[T.any(Formula, Keg, Cask::Cask, T::Array[Keg], FormulaOrCaskUnavailableError)],
           ]),
         )
         @to_formulae_casks_unknowns[method] = downcased_unique_named.map do |name|
@@ -571,6 +571,7 @@ module Homebrew
         end
         return unless available
         return if Context.current.quiet?
+        return if cask&.old_tokens&.include?(ref)
 
         opoo package_conflicts_message(ref, loaded_type, cask)
       end

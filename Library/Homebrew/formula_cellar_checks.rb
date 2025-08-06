@@ -3,7 +3,7 @@
 
 require "utils/shell"
 
-# Checks to perform on a formula's cellar.
+# Checks to perform on a formula's keg (versioned Cellar path).
 module FormulaCellarChecks
   extend T::Helpers
 
@@ -84,7 +84,6 @@ module FormulaCellarChecks
   def valid_library_extension?(filename)
     VALID_LIBRARY_EXTENSIONS.include? filename.extname
   end
-  alias generic_valid_library_extension? valid_library_extension?
 
   sig { returns(T.nilable(String)) }
   def check_non_libraries
@@ -307,7 +306,7 @@ module FormulaCellarChecks
     return unless formula.service?
     return unless formula.service.command?
 
-    "Service command does not exist" unless File.exist?(T.must(formula.service.command).first)
+    "Service command does not exist" unless File.exist?(formula.service.command.first)
   end
 
   sig { params(formula: Formula).returns(T.nilable(String)) }
@@ -320,6 +319,7 @@ module FormulaCellarChecks
     return unless dot_brew_formula.exist?
 
     return unless dot_brew_formula.read.include? "ENV.runtime_cpu_detection"
+    return if formula.tap&.audit_exception(:no_cpuid_allowlist, formula.name)
 
     # macOS `objdump` is a bit slow, so we prioritise llvm's `llvm-objdump` (~5.7x faster)
     # or binutils' `objdump` (~1.8x faster) if they are installed.
@@ -436,7 +436,6 @@ module FormulaCellarChecks
     problem_if_output(check_cpuid_instruction(formula))
     problem_if_output(check_binary_arches(formula))
   end
-  alias generic_audit_installed audit_installed
 
   private
 

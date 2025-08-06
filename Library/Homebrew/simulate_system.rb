@@ -2,12 +2,18 @@
 # frozen_string_literal: true
 
 require "macos_version"
+require "utils/bottles"
 
 module Homebrew
   # Helper module for simulating different system configurations.
   class SimulateSystem
     class << self
       attr_reader :arch, :os
+
+      sig { returns(T::Hash[Symbol, Symbol]) }
+      def arch_symbols
+        { arm64: :arm, x86_64: :intel }.freeze
+      end
 
       sig {
         type_parameters(:U).params(
@@ -31,6 +37,18 @@ module Homebrew
           @os = old_os
           @arch = old_arch
         end
+      end
+
+      sig {
+        type_parameters(:U).params(
+          tag:   Utils::Bottles::Tag,
+          block: T.proc.returns(T.type_parameter(:U)),
+        ).returns(T.type_parameter(:U))
+      }
+      def with_tag(tag, &block)
+        raise ArgumentError, "Invalid tag: #{tag}" unless tag.valid_combination?
+
+        with(os: tag.system, arch: tag.arch, &block)
       end
 
       sig { params(new_os: Symbol).void }
@@ -71,6 +89,14 @@ module Homebrew
       sig { returns(Symbol) }
       def current_os
         os || :generic
+      end
+
+      sig { returns(Utils::Bottles::Tag) }
+      def current_tag
+        Utils::Bottles::Tag.new(
+          system: current_os,
+          arch:   current_arch,
+        )
       end
     end
   end

@@ -30,7 +30,7 @@ RSpec.describe CaskDependent, :needs_macos do
     end
   end
 
-  describe "#recursive_dependencies", :integration_test do
+  describe "#recursive_dependencies", :integration_test, :no_api do
     it "is all the dependencies of the cask" do
       setup_test_formula "foo"
       setup_test_formula "bar"

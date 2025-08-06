@@ -173,4 +173,43 @@ RSpec.describe RuboCop::Cop::Cask::NoOverrides, :config do
       end
     CASK
   end
+
+  it "accepts when there is a top-level `depends_on macos:` stanza" do
+    expect_no_offenses <<~CASK
+      cask 'foo' do
+        version '1.2.3'
+        url 'https://brew.sh/foo.pkg'
+
+        depends_on macos: ">= :sequoia"
+
+        name 'Foo'
+      end
+    CASK
+  end
+
+  it "reports an offense when `on_*` blocks contain a `depends_on macos:` stanza" do
+    expect_offense <<~CASK
+      cask 'foo' do
+        version '1.2.3'
+
+        on_sequoia :or_newer do
+          sha256 "aaa"
+          url "https://brew.sh/foo-mac.dmg"
+
+          depends_on macos: ">= :sequoia"
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Do not use a `depends_on macos:` stanza inside an `on_{system}` block. Add it once to specify the oldest macOS supported by any version in the cask.
+        end
+
+        on_arm do
+          sha256 "bbb"
+          url "https://brew.sh/foo-arm.dmg"
+
+          depends_on macos: ">= :sequoia"
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Do not use a `depends_on macos:` stanza inside an `on_{system}` block. Add it once to specify the oldest macOS supported by any version in the cask.
+        end
+
+        name 'Foo'
+      end
+    CASK
+  end
 end

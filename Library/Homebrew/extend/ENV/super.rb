@@ -62,7 +62,8 @@ module Superenv
 
     self["HOMEBREW_ENV"] = "super"
     self["MAKEFLAGS"] ||= "-j#{determine_make_jobs}"
-    self["RUSTFLAGS"] = Hardware.rustflags_target_cpu(effective_arch)
+    self["RUSTC_WRAPPER"] = "#{HOMEBREW_SHIMS_PATH}/super/rustc_wrapper"
+    self["HOMEBREW_RUSTFLAGS"] = Hardware.rustflags_target_cpu(effective_arch)
     self["PATH"] = determine_path
     self["PKG_CONFIG_PATH"] = determine_pkg_config_path
     self["PKG_CONFIG_LIBDIR"] = determine_pkg_config_libdir || ""
@@ -93,6 +94,8 @@ module Superenv
     # Prevent Go from automatically downloading a newer toolchain than the one that we have.
     # https://tip.golang.org/doc/toolchain
     self["GOTOOLCHAIN"] = "local"
+    # Prevent maturin from automatically downloading its own rust
+    self["MATURIN_NO_INSTALL_RUST"] = "1"
     # Prevent Python packages from using bundled libraries by default.
     # Currently for hidapi, pyzmq and pynacl
     self["HIDAPI_SYSTEM_HIDAPI"] = "1"
@@ -120,11 +123,11 @@ module Superenv
     # o - Pass `-oso_prefix` to `ld` whenever it is invoked
     # c - Pass `-ld_classic` to `ld` whenever it is invoked
     #     with `-dead_strip_dylibs`
+    # b - Pass `-mbranch-protection=standard` to the compiler
     #
     # These flags will also be present:
     # a - apply fix for apr-1-config path
   end
-  alias generic_setup_build_environment setup_build_environment
 
   private
 
@@ -151,7 +154,6 @@ module Superenv
         .reverse
         .map { |d| d.opt_libexec/"bin" }
   end
-  alias generic_homebrew_extra_paths homebrew_extra_paths
 
   sig { returns(T.nilable(PATH)) }
   def determine_path
@@ -371,8 +373,8 @@ module Superenv
     append_to_cccfg "O"
   end
 
+  # This is an exception where we want to use this method name format.
   # rubocop: disable Naming/MethodName
-  # Fixes style error `Naming/MethodName: Use snake_case for method names.`
   sig { params(block: T.nilable(T.proc.void)).void }
   def O0(&block)
     if block

@@ -1,5 +1,12 @@
 #!/bin/bash
-HOMEBREW_PREFIX="$(cd "$(dirname "$0")"/../ && pwd)"
+if [[ -n "${BASH_SOURCE[0]}" ]]; then
+    SCRIPT_PATH="${BASH_SOURCE[0]}"
+elif [[ -n "${ZSH_VERSION}" ]]; then
+    SCRIPT_PATH="${(%):-%x}"
+else
+    SCRIPT_PATH="$0"
+fi
+HOMEBREW_PREFIX="$(cd "$(dirname "${SCRIPT_PATH}")"/../ && pwd)"
 
 "${HOMEBREW_PREFIX}/bin/brew" install-bundler-gems --add-groups=style,typecheck,vscode >/dev/null 2>&1
 

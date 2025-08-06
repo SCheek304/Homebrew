@@ -2,9 +2,19 @@
 # frozen_string_literal: true
 
 # Contains shorthand Homebrew utility methods like `ohai`, `opoo`, `odisabled`.
-# TODO: move these out of `Kernel`.
+# TODO: move these out of `Kernel` into `Homebrew::GlobalMethods` and add
+#       necessary Sorbet and global Kernel inclusions.
 
 module Kernel
+  sig { params(env: T.nilable(String)).returns(T::Boolean) }
+  def superenv?(env)
+    return false if env == "std"
+
+    !Superenv.bin.nil?
+  end
+  private :superenv?
+
+  sig { params(path: T.nilable(T.any(String, Pathname))).returns(T::Boolean) }
   def require?(path)
     return false if path.nil?
 
@@ -12,17 +22,17 @@ module Kernel
       # Work around require warning when done repeatedly:
       # https://bugs.ruby-lang.org/issues/21091
       Warnings.ignore(/already initialized constant/, /previous definition of/) do
-        require path
+        require path.to_s
       end
     else
-      require path
+      require path.to_s
     end
     true
-  rescue LoadError => e
-    # we should raise on syntax errors but not if the file doesn't exist.
-    raise unless e.message.include?(path)
+  rescue LoadError
+    false
   end
 
+  sig { params(title: String).returns(String) }
   def ohai_title(title)
     verbose = if respond_to?(:verbose?)
       T.unsafe(self).verbose?
@@ -35,7 +45,7 @@ module Kernel
   end
 
   def ohai(title, *sput)
-    puts ohai_title(title)
+    puts ohai_title(title.to_s)
     puts sput
   end
 
@@ -48,10 +58,11 @@ module Kernel
 
     return if !debug && !always_display
 
-    $stderr.puts Formatter.headline(title, color: :magenta)
+    $stderr.puts Formatter.headline(title.to_s, color: :magenta)
     $stderr.puts sput unless sput.empty?
   end
 
+  sig { params(title: String, truncate: T.any(Symbol, T::Boolean)).returns(String) }
   def oh1_title(title, truncate: :auto)
     verbose = if respond_to?(:verbose?)
       T.unsafe(self).verbose?
@@ -63,6 +74,7 @@ module Kernel
     Formatter.headline(title, color: :green)
   end
 
+  sig { params(title: String, truncate: T.any(Symbol, T::Boolean)).void }
   def oh1(title, truncate: :auto)
     puts oh1_title(title, truncate:)
   end
@@ -73,7 +85,7 @@ module Kernel
   sig { params(message: T.any(String, Exception)).void }
   def opoo(message)
     require "utils/github/actions"
-    return if GitHub::Actions.puts_annotation_if_env_set(:warning, message.to_s)
+    return if GitHub::Actions.puts_annotation_if_env_set!(:warning, message.to_s)
 
     require "utils/formatter"
 
@@ -82,13 +94,24 @@ module Kernel
     end
   end
 
+  # Print a warning message only if not running in GitHub Actions.
+  #
+  # @api public
+  sig { params(message: T.any(String, Exception)).void }
+  def opoo_outside_github_actions(message)
+    require "utils/github/actions"
+    return if GitHub::Actions.env_set?
+
+    opoo(message)
+  end
+
   # Print an error message.
   #
   # @api public
   sig { params(message: T.any(String, Exception)).void }
   def onoe(message)
     require "utils/github/actions"
-    return if GitHub::Actions.puts_annotation_if_env_set(:error, message.to_s)
+    return if GitHub::Actions.puts_annotation_if_env_set!(:error, message.to_s)
 
     require "utils/formatter"
 
@@ -116,6 +139,10 @@ module Kernel
   end
 
   # Output a deprecation warning/error message.
+  sig {
+    params(method: String, replacement: T.nilable(T.any(String, Symbol)), disable: T::Boolean,
+           disable_on: T.nilable(Time), disable_for_developers: T::Boolean, caller: T::Array[String]).void
+  }
   def odeprecated(method, replacement = nil,
                   disable:                false,
                   disable_on:             nil,
@@ -171,7 +198,7 @@ module Kernel
 
       tap = Tap.fetch(match[:user], match[:repository])
       tap_message = "\nPlease report this issue to the #{tap.full_name} tap"
-      tap_message += " (not Homebrew/brew or Homebrew/homebrew-core)" unless tap.official?
+      tap_message += " (not Homebrew/* repositories)" unless tap.official?
       tap_message += ", or even better, submit a PR to fix it" if replacement
       tap_message << ":\n  #{line.sub(/^(.*:\d+):.*$/, '\1')}\n\n"
       break
@@ -186,7 +213,7 @@ module Kernel
     disable = true if disable_for_developers && Homebrew::EnvConfig.developer?
     if disable || Homebrew.raise_deprecation_exceptions?
       require "utils/github/actions"
-      GitHub::Actions.puts_annotation_if_env_set(:error, message, file:, line:)
+      GitHub::Actions.puts_annotation_if_env_set!(:error, message, file:, line:)
       exception = MethodDeprecatedError.new(message)
       exception.set_backtrace(backtrace)
       raise exception
@@ -195,42 +222,52 @@ module Kernel
     end
   end
 
-  def odisabled(method, replacement = nil, **options)
-    options = { disable: true, caller: }.merge(options)
+  sig {
+    params(method: String, replacement: T.nilable(T.any(String, Symbol)),
+           disable_on: T.nilable(Time), disable_for_developers: T::Boolean, caller: T::Array[String]).void
+  }
+  def odisabled(method, replacement = nil,
+                disable_on:             nil,
+                disable_for_developers: true,
+                caller:                 send(:caller))
     # This odeprecated should stick around indefinitely.
-    odeprecated(method, replacement, **options)
+    odeprecated(method, replacement, disable: true, disable_on:, disable_for_developers:, caller:)
   end
 
-  def pretty_installed(formula)
+  sig { params(string: String).returns(String) }
+  def pretty_installed(string)
     if !$stdout.tty?
-      formula.to_s
+      string
     elsif Homebrew::EnvConfig.no_emoji?
-      Formatter.success("#{Tty.bold}#{formula} (installed)#{Tty.reset}")
+      Formatter.success("#{Tty.bold}#{string} (installed)#{Tty.reset}")
     else
-      "#{Tty.bold}#{formula} #{Formatter.success("✔")}#{Tty.reset}"
+      "#{Tty.bold}#{string} #{Formatter.success("✔")}#{Tty.reset}"
     end
   end
 
-  def pretty_outdated(formula)
+  sig { params(string: String).returns(String) }
+  def pretty_outdated(string)
     if !$stdout.tty?
-      formula.to_s
+      string
     elsif Homebrew::EnvConfig.no_emoji?
-      Formatter.error("#{Tty.bold}#{formula} (outdated)#{Tty.reset}")
+      Formatter.error("#{Tty.bold}#{string} (outdated)#{Tty.reset}")
     else
-      "#{Tty.bold}#{formula} #{Formatter.warning("⚠")}#{Tty.reset}"
+      "#{Tty.bold}#{string} #{Formatter.warning("⚠")}#{Tty.reset}"
     end
   end
 
-  def pretty_uninstalled(formula)
+  sig { params(string: String).returns(String) }
+  def pretty_uninstalled(string)
     if !$stdout.tty?
-      formula.to_s
+      string
     elsif Homebrew::EnvConfig.no_emoji?
-      Formatter.error("#{Tty.bold}#{formula} (uninstalled)#{Tty.reset}")
+      Formatter.error("#{Tty.bold}#{string} (uninstalled)#{Tty.reset}")
     else
-      "#{Tty.bold}#{formula} #{Formatter.error("✘")}#{Tty.reset}"
+      "#{Tty.bold}#{string} #{Formatter.error("✘")}#{Tty.reset}"
     end
   end
 
+  sig { params(seconds: T.nilable(T.any(Integer, Float))).returns(String) }
   def pretty_duration(seconds)
     seconds = seconds.to_i
     res = +""
@@ -248,9 +285,10 @@ module Kernel
     res.freeze
   end
 
+  sig { params(formula: T.nilable(Formula)).void }
   def interactive_shell(formula = nil)
     unless formula.nil?
-      ENV["HOMEBREW_DEBUG_PREFIX"] = formula.prefix
+      ENV["HOMEBREW_DEBUG_PREFIX"] = formula.prefix.to_s
       ENV["HOMEBREW_DEBUG_INSTALL"] = formula.full_name
     end
 
@@ -277,6 +315,7 @@ module Kernel
 
   # Kernel.system but with exceptions.
   def safe_system(cmd, *args, **options)
+    # TODO: migrate to utils.rb Homebrew.safe_system
     require "utils"
 
     return if Homebrew.system(cmd, *args, **options)
@@ -288,6 +327,7 @@ module Kernel
   #
   # @api internal
   def quiet_system(cmd, *args)
+    # TODO: migrate to utils.rb Homebrew.quiet_system
     require "utils"
 
     Homebrew._system(cmd, *args) do
@@ -332,8 +372,8 @@ module Kernel
     editor = Homebrew::EnvConfig.editor
     return editor if editor
 
-    # Find VS Code, Sublime Text, Textmate, BBEdit, or vim
-    editor = %w[code subl mate bbedit vim].find do |candidate|
+    # Find VS Code variants, Sublime Text, Textmate, BBEdit, or vim
+    editor = %w[code codium cursor code-insiders subl mate bbedit vim].find do |candidate|
       candidate if which(candidate, ORIGINAL_PATHS)
     end
     editor ||= "vim"
@@ -341,19 +381,21 @@ module Kernel
     unless silent
       opoo <<~EOS
         Using #{editor} because no editor was set in the environment.
-        This may change in the future, so we recommend setting EDITOR
-        or HOMEBREW_EDITOR to your preferred text editor.
+        This may change in the future, so we recommend setting `$EDITOR`
+        or `$HOMEBREW_EDITOR` to your preferred text editor.
       EOS
     end
 
     editor
   end
 
-  def exec_editor(*args)
-    puts "Editing #{args.join "\n"}"
-    with_homebrew_path { safe_system(*which_editor.shellsplit, *args) }
+  sig { params(filenames: T.any(String, Pathname)).void }
+  def exec_editor(*filenames)
+    puts "Editing #{filenames.join "\n"}"
+    with_homebrew_path { safe_system(*which_editor.shellsplit, *filenames) }
   end
 
+  sig { params(args: T.any(String, Pathname)).void }
   def exec_browser(*args)
     browser = Homebrew::EnvConfig.browser
     browser ||= OS::PATH_OPEN if defined?(OS::PATH_OPEN)
@@ -366,7 +408,7 @@ module Kernel
     end
   end
 
-  IGNORE_INTERRUPTS_MUTEX = Thread::Mutex.new.freeze
+  IGNORE_INTERRUPTS_MUTEX = T.let(Thread::Mutex.new.freeze, Thread::Mutex)
 
   def ignore_interrupts
     IGNORE_INTERRUPTS_MUTEX.synchronize do
@@ -397,47 +439,8 @@ module Kernel
     out.close
   end
 
-  # Ensure the given formula is installed
-  # This is useful for installing a utility formula (e.g. `shellcheck` for `brew style`)
-  def ensure_formula_installed!(formula_or_name, reason: "", latest: false,
-                                output_to_stderr: true, quiet: false)
-    if output_to_stderr || quiet
-      file = if quiet
-        File::NULL
-      else
-        $stderr
-      end
-      # Call this method itself with redirected stdout
-      redirect_stdout(file) do
-        return ensure_formula_installed!(formula_or_name, latest:,
-                                         reason:, output_to_stderr: false)
-      end
-    end
-
-    require "formula"
-
-    formula = if formula_or_name.is_a?(Formula)
-      formula_or_name
-    else
-      Formula[formula_or_name]
-    end
-
-    reason = " for #{reason}" if reason.present?
-
-    unless formula.any_version_installed?
-      ohai "Installing `#{formula.name}`#{reason}..."
-      safe_system HOMEBREW_BREW_FILE, "install", "--formula", formula.full_name
-    end
-
-    if latest && !formula.latest_version_installed?
-      ohai "Upgrading `#{formula.name}`#{reason}..."
-      safe_system HOMEBREW_BREW_FILE, "upgrade", "--formula", formula.full_name
-    end
-
-    formula
-  end
-
   # Ensure the given executable is exist otherwise install the brewed version
+  sig { params(name: String, formula_name: T.nilable(String), reason: String, latest: T::Boolean).returns(T.nilable(Pathname)) }
   def ensure_executable!(name, formula_name = nil, reason: "", latest: false)
     formula_name ||= name
 
@@ -451,21 +454,24 @@ module Kernel
     ].compact.first
     return executable if executable.exist?
 
-    ensure_formula_installed!(formula_name, reason:, latest:).opt_bin/name
+    require "formula"
+    Formula[formula_name].ensure_installed!(reason:, latest:).opt_bin/name
   end
 
+  sig { returns(T::Array[Pathname]) }
   def paths
-    @paths ||= ORIGINAL_PATHS.uniq.map(&:to_s)
+    @paths ||= T.let(ORIGINAL_PATHS.uniq.map(&:to_s), T.nilable(T::Array[Pathname]))
   end
 
+  sig { params(size_in_bytes: T.any(Integer, Float)).returns(String) }
   def disk_usage_readable(size_in_bytes)
-    if size_in_bytes >= 1_073_741_824
+    if size_in_bytes.abs >= 1_073_741_824
       size = size_in_bytes.to_f / 1_073_741_824
       unit = "GB"
-    elsif size_in_bytes >= 1_048_576
+    elsif size_in_bytes.abs >= 1_048_576
       size = size_in_bytes.to_f / 1_048_576
       unit = "MB"
-    elsif size_in_bytes >= 1_024
+    elsif size_in_bytes.abs >= 1_024
       size = size_in_bytes.to_f / 1_024
       unit = "KB"
     else
@@ -491,6 +497,7 @@ module Kernel
   # preserving character encoding validity. The returned string will
   # be not much longer than the specified max_bytes, though the exact
   # shortfall or overrun may vary.
+  sig { params(str: String, max_bytes: Integer, options: T::Hash[Symbol, T.untyped]).returns(String) }
   def truncate_text_to_approximate_size(str, max_bytes, options = {})
     front_weight = options.fetch(:front_weight, 0.5)
     raise "opts[:front_weight] must be between 0.0 and 1.0" if front_weight < 0.0 || front_weight > 1.0
@@ -512,7 +519,7 @@ module Kernel
       front = bytes[0..(n_front_bytes - 1)]
       back = bytes[-n_back_bytes..]
     end
-    out = front + glue_bytes + back
+    out = T.must(front) + glue_bytes + T.must(back)
     out.force_encoding("UTF-8")
     out.encode!("UTF-16", invalid: :replace)
     out.encode!("UTF-8")
@@ -550,6 +557,7 @@ module Kernel
     end
   end
 
+  sig { returns(T.proc.params(a: String, b: String).returns(Integer)) }
   def tap_and_name_comparison
     proc do |a, b|
       if a.include?("/") && b.exclude?("/")
@@ -562,6 +570,7 @@ module Kernel
     end
   end
 
+  sig { params(input: String, secrets: T::Array[String]).returns(String) }
   def redact_secrets(input, secrets)
     secrets.compact
            .reduce(input) { |str, secret| str.gsub secret, "******" }

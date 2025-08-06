@@ -55,7 +55,7 @@ RSpec.describe Formulary do
   end
 
   describe "::factory" do
-    context "without the API" do
+    context "without the API", :no_api do
       before do
         formula_path.dirname.mkpath
         formula_path.write formula_content
@@ -129,7 +129,7 @@ RSpec.describe Formulary do
         end.to raise_error(FormulaUnavailableError)
       end
 
-      it "returns a Formula when given a URL", :needs_utils_curl, :no_api do
+      it "returns a Formula when given a URL", :needs_utils_curl do
         formula = described_class.factory("file://#{formula_path}")
         expect(formula).to be_a(Formula)
       end
@@ -398,8 +398,6 @@ RSpec.describe Formulary do
       end
 
       before do
-        ENV.delete("HOMEBREW_NO_INSTALL_FROM_API")
-
         # avoid unnecessary network calls
         allow(Homebrew::API::Formula).to receive_messages(all_aliases: {}, all_renames: {})
         allow(CoreTap.instance).to receive(:tap_migrations).and_return({})
@@ -645,16 +643,12 @@ RSpec.describe Formulary do
     end
 
     context "when given a tapped name" do
-      it "returns a `FromTapLoader`" do
+      it "returns a `FromTapLoader`", :no_api do
         expect(described_class.loader_for("homebrew/core/gcc")).to be_a Formulary::FromTapLoader
       end
     end
 
-    context "when not using the API" do
-      before do
-        ENV["HOMEBREW_NO_INSTALL_FROM_API"] = "1"
-      end
-
+    context "when not using the API", :no_api do
       context "when a formula is migrated" do
         let(:token) { "foo" }
 

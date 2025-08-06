@@ -90,7 +90,7 @@ RSpec.describe "Utils::Curl" do
     details[:cloudflare][:wrong_server][:headers]["server"] = "nginx 1.2.3"
 
     # TODO: Make the Incapsula test data more realistic once we can find an
-    # example website to reference.
+    #       example website to reference.
     details[:incapsula][:single_cookie_visid_incap] = details[:normal][:no_cookie].deep_dup
     details[:incapsula][:single_cookie_visid_incap][:headers]["set-cookie"] = "visid_incap_something=something"
 
@@ -323,7 +323,7 @@ RSpec.describe "Utils::Curl" do
   end
 
   describe "::curl_executable" do
-    it "returns `HOMEBREW_BREWED_CURL_PATH` when `use_homebrew_curl` is `true`" do
+    it "returns HOMEBREW_BREWED_CURL_PATH when `use_homebrew_curl` is `true`" do
       expect(curl_executable(use_homebrew_curl: true)).to eq(HOMEBREW_BREWED_CURL_PATH)
     end
 

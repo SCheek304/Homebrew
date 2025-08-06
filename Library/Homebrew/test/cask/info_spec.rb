@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "utils"
+require "cask/info"
 
 RSpec.describe Cask::Info, :cask do
   let(:args) { instance_double(Homebrew::Cmd::Info::Args) }

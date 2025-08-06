@@ -160,15 +160,6 @@ module Cask
         EOS
       end
 
-      caveat :discontinued do
-        odisabled "`caveats :discontinued`", "`deprecate!`"
-        @discontinued = true
-        <<~EOS
-          #{@cask} has been officially discontinued upstream.
-          It may stop working correctly (or at all) in recent versions of macOS.
-        EOS
-      end
-
       caveat :license do |web_page|
         <<~EOS
           Installing #{@cask} means you have AGREED to the license at:

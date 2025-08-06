@@ -13,7 +13,7 @@ module Homebrew
         description <<~EOS
           Check for newer versions of formulae and/or casks from upstream.
           If no formula or cask argument is passed, the list of formulae and
-          casks to check is taken from `HOMEBREW_LIVECHECK_WATCHLIST` or
+          casks to check is taken from `$HOMEBREW_LIVECHECK_WATCHLIST` or
           `~/.homebrew/livecheck_watchlist.txt`.
         EOS
         switch "--full-name",
@@ -25,7 +25,7 @@ module Homebrew
         switch "--installed",
                description: "Check formulae and casks that are currently installed."
         switch "--newer-only",
-               description: "Show the latest version only if it's newer than the formula/cask."
+               description: "Show the latest version only if it's newer than the current formula or cask version."
         switch "--json",
                description: "Output information in JSON format."
         switch "-r", "--resources",
@@ -53,7 +53,7 @@ module Homebrew
       def run
         Homebrew.install_bundler_gems!(groups: ["livecheck"])
 
-        all = args.eval_all?
+        eval_all = args.eval_all?
 
         if args.debug? && args.verbose?
           puts args
@@ -70,12 +70,12 @@ module Homebrew
             formulae = args.cask? ? [] : Formula.installed
             casks = args.formula? ? [] : Cask::Caskroom.casks
             formulae + casks
-          elsif all
-            formulae = args.cask? ? [] : Formula.all(eval_all: args.eval_all?)
-            casks = args.formula? ? [] : Cask::Cask.all(eval_all: args.eval_all?)
-            formulae + casks
           elsif args.named.present?
             args.named.to_formulae_and_casks_with_taps
+          elsif eval_all
+            formulae = args.cask? ? [] : Formula.all(eval_all:)
+            casks = args.formula? ? [] : Cask::Cask.all(eval_all:)
+            formulae + casks
           elsif File.exist?(watchlist_path)
             begin
               names = Pathname.new(watchlist_path).read.lines
@@ -88,7 +88,8 @@ module Homebrew
               onoe e
             end
           else
-            raise UsageError, "A watchlist file is required when no arguments are given."
+            raise UsageError,
+                  "`brew livecheck` with no arguments needs a watchlist file to be present or `--eval-all` passed!"
           end
         end
 
@@ -100,10 +101,7 @@ module Homebrew
             tap = formula_or_cask.tap
             next false if tap.nil?
 
-            autobump_lists[tap] ||= begin
-              autobump_path = tap.path/".github/autobump.txt"
-              autobump_path.exist? ? autobump_path.readlines.map(&:strip) : []
-            end
+            autobump_lists[tap] ||= tap.autobump
 
             name = formula_or_cask.respond_to?(:token) ? formula_or_cask.token : formula_or_cask.name
             next unless autobump_lists[tap].include?(name)

@@ -90,7 +90,7 @@ module Readall
 
   sig {
     params(
-      tap: Tap, aliases: T::Boolean, no_simulate: T::Boolean, os_arch_combinations: T::Array[T::Array[String]],
+      tap: Tap, aliases: T::Boolean, no_simulate: T::Boolean, os_arch_combinations: T::Array[[Symbol, Symbol]],
     ).returns(T::Boolean)
   }
   def self.valid_tap?(tap, aliases: false, no_simulate: false,

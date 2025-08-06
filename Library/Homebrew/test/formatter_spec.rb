@@ -110,4 +110,18 @@ RSpec.describe Formatter do
       expect(described_class.format_help_text(text, width: 80)).to eq expected
     end
   end
+
+  describe "::truncate" do
+    it "returns the original string if it's shorter than max length" do
+      expect(described_class.truncate("short", max: 10)).to eq("short")
+    end
+
+    it "truncates strings longer than max length" do
+      expect(described_class.truncate("this is a long string", max: 10)).to eq("this is...")
+    end
+
+    it "uses custom omission string" do
+      expect(described_class.truncate("this is a long string", max: 10, omission: " [...]")).to eq("this [...]")
+    end
+  end
 end

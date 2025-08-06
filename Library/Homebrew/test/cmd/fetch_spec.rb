@@ -19,7 +19,7 @@ RSpec.describe Homebrew::Cmd::FetchCmd do
     setup_test_formula "testball1"
     setup_test_formula "testball2"
 
-    expect { brew "fetch", "testball1", "testball2", "--concurrency=2" }.to be_a_success
+    expect { brew "fetch", "testball1", "testball2", "HOMEBREW_DOWNLOAD_CONCURRENCY" => "2" }.to be_a_success
 
     expect(HOMEBREW_CACHE/"testball1--0.1.tbz").to be_a_symlink
     expect(HOMEBREW_CACHE/"testball1--0.1.tbz").to exist
@@ -33,7 +33,7 @@ RSpec.describe Homebrew::Cmd::FetchCmd do
     setup_test_formula "testball1"
     setup_test_formula "testball3"
 
-    expect { brew "fetch", "testball1", "testball3", "--concurrency=2" }.to be_a_failure
+    expect { brew "fetch", "testball1", "testball3", "HOMEBREW_DOWNLOAD_CONCURRENCY" => "2" }.to be_a_failure
       .and output(/Error:.*process has already locked/).to_stderr
   end
 end

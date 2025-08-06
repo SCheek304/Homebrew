@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 require "digest/sha2"
-require "extend/cachable"
+require "cachable"
 require "tab"
 require "utils"
 require "utils/bottles"
@@ -79,6 +79,9 @@ module Formulary
   end
 
   module PathnameWriteMkpath
+    # TODO: migrate away from refinements here, they don't play nicely with
+    #       Sorbet, when we migrate to `typed: strict`
+    # rubocop:todo Sorbet/BlockMethodDefinition
     refine Pathname do
       def write(content, offset = nil, **open_args)
         T.bind(self, Pathname)
@@ -89,14 +92,20 @@ module Formulary
         super
       end
     end
+    # rubocop:enable Sorbet/BlockMethodDefinition
   end
 
   using PathnameWriteMkpath
   def self.load_formula(name, path, contents, namespace, flags:, ignore_errors:)
-    raise "Formula loading disabled by HOMEBREW_DISABLE_LOAD_FORMULA!" if Homebrew::EnvConfig.disable_load_formula?
+    raise "Formula loading disabled by `$HOMEBREW_DISABLE_LOAD_FORMULA`!" if Homebrew::EnvConfig.disable_load_formula?
 
     require "formula"
     require "ignorable"
+    require "stringio"
+
+    # Capture stdout to prevent formulae from printing to stdout unexpectedly.
+    old_stdout = $stdout
+    $stdout = StringIO.new
 
     mod = Module.new
     remove_const(namespace) if const_defined?(namespace)
@@ -128,11 +137,21 @@ module Formulary
     rescue NameError => e
       class_list = mod.constants
                       .map { |const_name| mod.const_get(const_name) }
-                      .select { |const| const.is_a?(Class) }
+                      .grep(Class)
       new_exception = FormulaClassUnavailableError.new(name, path, class_name, class_list)
       remove_const(namespace)
       raise new_exception, "", e.backtrace
     end
+  ensure
+    # TODO: Make printing to stdout an error so that we can print a tap name.
+    #       See discussion at https://github.com/Homebrew/brew/pull/20226#discussion_r2195886888
+    if (printed_to_stdout = $stdout.string.strip.presence)
+      opoo <<~WARNING
+        Formula #{name} attempted to print the following while being loaded:
+        #{printed_to_stdout}
+      WARNING
+    end
+    $stdout = old_stdout
   end
 
   sig { params(identifier: String).returns(String) }
@@ -155,7 +174,7 @@ module Formulary
   end
 
   sig { params(name: String, flags: T::Array[String]).returns(T.class_of(Formula)) }
-  def self.load_formula_from_api(name, flags:)
+  def self.load_formula_from_api!(name, flags:)
     namespace = :"FormulaNamespaceAPI#{namespace_key(name)}"
 
     mod = Module.new
@@ -249,6 +268,9 @@ module Formulary
       end
     end
 
+    # TODO: migrate away from this inline class here, they don't play nicely with
+    #       Sorbet, when we migrate to `typed: strict`
+    # rubocop:todo Sorbet/BlockMethodDefinition
     klass = Class.new(::Formula) do
       @loaded_from_api = true
 
@@ -289,6 +311,11 @@ module Formulary
             depends_on req
           end
         end
+      end
+
+      if (because = json_formula["no_autobump_msg"])
+        because = because.to_sym if NO_AUTOBUMP_REASONS_LIST.key?(because.to_sym)
+        no_autobump!(because:)
       end
 
       bottles_stable = json_formula["bottle"]["stable"].presence
@@ -412,6 +439,7 @@ module Formulary
         Checksum.new(checksum) if checksum
       end
     end
+    # rubocop:enable Sorbet/BlockMethodDefinition
 
     mod.const_set(class_name, klass)
 
@@ -633,7 +661,7 @@ module Formulary
 
       # Cache compiled regex
       @uri_regex ||= begin
-        uri_regex = ::URI::DEFAULT_PARSER.make_regexp
+        uri_regex = ::URI::RFC2396_PARSER.make_regexp
         Regexp.new("\\A#{uri_regex.source}\\Z", uri_regex.options)
       end
 
@@ -883,7 +911,7 @@ module Formulary
     private
 
     def load_from_api(flags:)
-      Formulary.load_formula_from_api(name, flags:)
+      Formulary.load_formula_from_api!(name, flags:)
     end
   end
 
@@ -1131,7 +1159,7 @@ module Formulary
       NullLoader,
     ].each do |loader_class|
       if (loader = loader_class.try_new(ref, from:, warn:))
-        $stderr.puts "#{$PROGRAM_NAME} (#{loader_class}): loading #{ref}" if debug?
+        $stderr.puts "#{$PROGRAM_NAME} (#{loader_class}): loading #{ref}" if verbose? && debug?
         return loader
       end
     end

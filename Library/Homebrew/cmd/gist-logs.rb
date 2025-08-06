@@ -63,7 +63,9 @@ module Homebrew
           files["00.tap.out"] = { content: tap }
         end
 
-        odie "`brew gist-logs` requires HOMEBREW_GITHUB_API_TOKEN to be set!" if GitHub::API.credentials_type == :none
+        if GitHub::API.credentials_type == :none
+          odie "`brew gist-logs` requires `$HOMEBREW_GITHUB_API_TOKEN` to be set!"
+        end
 
         # Description formatted to work well as page title when viewing gist
         descr = if formula.core_formula?

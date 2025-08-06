@@ -5,7 +5,7 @@ require "dependency"
 require "dependencies"
 require "requirement"
 require "requirements"
-require "extend/cachable"
+require "cachable"
 
 # A dependency is a formula that another formula needs to install.
 # A requirement is something other than a formula that another formula
@@ -67,7 +67,7 @@ class DependencyCollector
   def cache_key(spec)
     if spec.is_a?(Resource)
       if spec.download_strategy <= CurlDownloadStrategy
-        return "#{spec.download_strategy}#{File.extname(spec.url).split("?").first}"
+        return "#{spec.download_strategy}#{File.extname(T.must(spec.url)).split("?").first}"
       end
 
       return spec.download_strategy

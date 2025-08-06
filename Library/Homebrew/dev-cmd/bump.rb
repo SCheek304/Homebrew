@@ -33,12 +33,15 @@ module Homebrew
         switch "--auto",
                description: "Read the list of formulae/casks from the tap autobump list.",
                hidden:      true
+        switch "--no-autobump",
+               description: "Ignore formulae/casks in autobump list (official repositories only)."
         switch "--formula", "--formulae",
                description: "Check only formulae."
         switch "--cask", "--casks",
                description: "Check only casks."
         switch "--eval-all",
-               description: "Evaluate all formulae and casks."
+               description: "Evaluate all formulae and casks.",
+               env:         :eval_all
         switch "--repology",
                description: "Use Repology to check for outdated packages."
         flag   "--tap=",
@@ -51,9 +54,12 @@ module Homebrew
                description: "Open a pull request for the new version if none have been opened yet."
         flag   "--start-with=",
                description: "Letter or word that the list of package results should alphabetically follow."
+        switch "--bump-synced",
+               description: "Bump additional formulae marked as synced with the given formulae."
 
         conflicts "--cask", "--formula"
         conflicts "--tap=", "--installed"
+        conflicts "--tap=", "--no-autobump"
         conflicts "--eval-all", "--installed"
         conflicts "--installed", "--auto"
         conflicts "--no-pull-requests", "--open-pr"
@@ -66,7 +72,13 @@ module Homebrew
         Homebrew.install_bundler_gems!(groups: ["livecheck"])
 
         Homebrew.with_no_api_env do
-          eval_all = args.eval_all? || Homebrew::EnvConfig.eval_all?
+          eval_all = args.eval_all?
+
+          excluded_autobump = []
+          if args.no_autobump? && eval_all
+            excluded_autobump.concat(autobumped_formulae_or_casks(CoreTap.instance)) if args.formula?
+            excluded_autobump.concat(autobumped_formulae_or_casks(CoreCaskTap.instance, casks: true)) if args.cask?
+          end
 
           formulae_and_casks = if args.auto?
             raise UsageError, "`--formula` or `--cask` must be passed with `--auto`." if !args.formula? && !args.cask?
@@ -105,7 +117,7 @@ module Homebrew
           else
             raise UsageError,
                   "`brew bump` without named arguments needs `--installed` or `--eval-all` passed or " \
-                  "`HOMEBREW_EVAL_ALL` set!"
+                  "`HOMEBREW_EVAL_ALL=1` set!"
           end
 
           if args.start_with
@@ -119,9 +131,11 @@ module Homebrew
             formula_or_cask.respond_to?(:token) ? formula_or_cask.token : formula_or_cask.name
           end
 
+          formulae_and_casks -= excluded_autobump
+
           if args.repology? && !Utils::Curl.curl_supports_tls13?
             begin
-              ensure_formula_installed!("curl", reason: "Repology queries") unless HOMEBREW_BREWED_CURL_PATH.exist?
+              Formula["curl"].ensure_installed!(reason: "Repology queries") unless HOMEBREW_BREWED_CURL_PATH.exist?
             rescue FormulaUnavailableError
               opoo "A newer `curl` is required for Repology queries."
             end
@@ -166,7 +180,7 @@ module Homebrew
 
         formulae_and_casks.each_with_index do |formula_or_cask, i|
           puts if i.positive?
-          next if skip_ineligible_formulae(formula_or_cask)
+          next if skip_ineligible_formulae!(formula_or_cask)
 
           use_full_name = args.full_name? || ambiguous_names.include?(formula_or_cask)
           name = Livecheck.package_or_resource_name(formula_or_cask, full_name: use_full_name)
@@ -190,7 +204,7 @@ module Homebrew
       sig {
         params(formula_or_cask: T.any(Formula, Cask::Cask)).returns(T::Boolean)
       }
-      def skip_ineligible_formulae(formula_or_cask)
+      def skip_ineligible_formulae!(formula_or_cask)
         if formula_or_cask.is_a?(Formula)
           skip = formula_or_cask.disabled? || formula_or_cask.head_only?
           name = formula_or_cask.name
@@ -457,10 +471,12 @@ module Homebrew
         EOS
         if formula_or_cask.is_a?(Formula) && formula_or_cask.synced_with_other_formulae?
           outdated_synced_formulae = synced_with(formula_or_cask, new_version.general)
-          puts <<~EOS if outdated_synced_formulae.present?
-            Version syncing:          #{title_name} version should be kept in sync with
-                                      #{outdated_synced_formulae.join(", ")}.
-          EOS
+          if !args.bump_synced? && outdated_synced_formulae.present?
+            puts <<~EOS
+              Version syncing:          #{title_name} version should be kept in sync with
+                                        #{outdated_synced_formulae.join(", ")}.
+            EOS
+          end
         end
         if !args.no_pull_requests? &&
            (new_version.general != "unable to get versions") &&
@@ -506,7 +522,7 @@ module Homebrew
           "--version=#{new_version.general}"
         end
 
-        bump_cask_pr_args = [
+        bump_pr_args = [
           "bump-#{version_info.type}-pr",
           name,
           *version_args,
@@ -514,9 +530,13 @@ module Homebrew
           "--message=Created by `brew bump`",
         ]
 
-        bump_cask_pr_args << "--no-fork" if args.no_fork?
+        bump_pr_args << "--no-fork" if args.no_fork?
 
-        system HOMEBREW_BREW_FILE, *bump_cask_pr_args
+        if args.bump_synced? && outdated_synced_formulae.present?
+          bump_pr_args << "--bump-synced=#{outdated_synced_formulae.join(",")}"
+        end
+
+        system HOMEBREW_BREW_FILE, *bump_pr_args
       end
 
       sig {
@@ -540,6 +560,19 @@ module Homebrew
         end
 
         synced_with
+      end
+
+      sig { params(tap: Tap, casks: T::Boolean).returns(T::Array[T.any(Formula, Cask::Cask)]) }
+      def autobumped_formulae_or_casks(tap, casks: false)
+        autobump_list = tap.autobump
+        autobump_list.map do |name|
+          qualified_name = "#{tap.name}/#{name}"
+          if casks
+            Cask::CaskLoader.load(qualified_name)
+          else
+            Formulary.factory(qualified_name)
+          end
+        end
       end
     end
   end

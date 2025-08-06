@@ -20,6 +20,7 @@ bump-cask-pr
 bump-formula-pr
 bump-revision
 bump-unversioned-casks
+bundle
 casks
 cat
 cleanup
@@ -67,6 +68,7 @@ livecheck
 ln
 log
 ls
+mcp-server
 migrate
 missing
 nodenv-sync
@@ -91,6 +93,7 @@ rubocop
 ruby
 rubydoc
 search
+services
 setup-ruby
 sh
 shellenv
@@ -112,8 +115,10 @@ unpin
 untap
 up
 update
+update-if-needed
 update-license-data
 update-maintainers
+update-perl-resources
 update-python-resources
 update-reset
 update-sponsors

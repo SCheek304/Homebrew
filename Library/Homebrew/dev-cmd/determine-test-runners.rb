@@ -21,7 +21,8 @@ module Homebrew
                             "dependents.",
                env:         :eval_all
         switch "--dependents",
-               description: "Determine runners for testing dependents. Requires `--eval-all` or `HOMEBREW_EVAL_ALL`.",
+               description: "Determine runners for testing dependents. " \
+                            "Requires `--eval-all` or `HOMEBREW_EVAL_ALL=1` to be set.",
                depends_on:  "--eval-all"
 
         named_args max: 2

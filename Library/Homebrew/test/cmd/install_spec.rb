@@ -4,6 +4,7 @@ require "cmd/install"
 require "cmd/shared_examples/args_parse"
 
 RSpec.describe Homebrew::Cmd::InstallCmd do
+  include FileUtils
   it_behaves_like "parseable arguments"
 
   it "installs formulae", :integration_test do
@@ -66,7 +67,7 @@ RSpec.describe Homebrew::Cmd::InstallCmd do
     # Ignore dependencies, because we'll try to resolve requirements in build.rb
     # and there will be the git requirement, but we cannot instantiate git
     # formula since we only have testball1 formula.
-    expect { brew "install", "testball1", "--HEAD", "--ignore-dependencies" }
+    expect { brew "install", "testball1", "--HEAD", "--ignore-dependencies", "HOMEBREW_DOWNLOAD_CONCURRENCY" => "1" }
       .to output(%r{#{HOMEBREW_CELLAR}/testball1/HEAD-d5eb689}o).to_stdout
       .and output(/Cloning into/).to_stderr
       .and be_a_success
@@ -83,5 +84,25 @@ RSpec.describe Homebrew::Cmd::InstallCmd do
     expect(HOMEBREW_CELLAR/"testball1/0.1/bin/test").to be_a_file
     expect(HOMEBREW_CELLAR/"testball1/0.1/bin/test.dSYM/Contents/Resources/DWARF/test").to be_a_file if OS.mac?
     expect(HOMEBREW_CACHE/"Sources/testball1").to be_a_directory
+  end
+
+  it "installs with asking for user prompts without installed dependent checks", :integration_test do
+    setup_test_formula "testball1"
+
+    expect do
+      brew "install", "--ask", "testball1"
+    end.to output(/.*Formula\s*\(1\):\s*testball1.*/).to_stdout.and not_to_output.to_stderr
+
+    expect(HOMEBREW_CELLAR/"testball1/0.1/bin/test").to be_a_file
+  end
+
+  it "refuses to install forbidden formulae", :integration_test do
+    setup_test_formula "testball1"
+
+    expect { brew "install", "testball1", { "HOMEBREW_FORBIDDEN_FORMULAE" => "testball1" } }
+      .to not_to_output(%r{#{HOMEBREW_CELLAR}/testball1/0\.1}o).to_stdout
+      .and output(/testball1 was forbidden/).to_stderr
+      .and be_a_failure
+    expect(HOMEBREW_CELLAR/"testball1").not_to exist
   end
 end

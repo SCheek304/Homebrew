@@ -33,7 +33,7 @@ RSpec.describe TestRunnerFormula do
       expect(described_class.new(testball, eval_all: true).eval_all).to be(true)
     end
 
-    it "takes the value of `HOMEBREW_EVAL_ALL` at instantiation time if not specified" do
+    it "takes the value of HOMEBREW_EVAL_ALL at instantiation time if not specified" do
       allow(Homebrew::EnvConfig).to receive(:eval_all?).and_return(true)
       expect(described_class.new(testball).eval_all).to be(true)
 

@@ -12,12 +12,12 @@ class Keg
 
     elf_files.each do |file|
       file.ensure_writable do
-        change_rpath(file, old_prefix, new_prefix)
+        change_rpath!(file, old_prefix, new_prefix)
       end
     end
   end
 
-  def change_rpath(file, old_prefix, new_prefix)
+  def change_rpath!(file, old_prefix, new_prefix)
     return false if !file.elf? || !file.dynamic_elf?
 
     updated = {}

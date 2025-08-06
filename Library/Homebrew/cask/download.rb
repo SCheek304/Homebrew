@@ -1,4 +1,4 @@
-# typed: true # rubocop:todo Sorbet/StrictSigil
+# typed: strict
 # frozen_string_literal: true
 
 require "downloadable"
@@ -13,8 +13,10 @@ module Cask
 
     include Context
 
+    sig { returns(::Cask::Cask) }
     attr_reader :cask
 
+    sig { params(cask: ::Cask::Cask, quarantine: T.nilable(T::Boolean)).void }
     def initialize(cask, quarantine: nil)
       super()
 
@@ -22,16 +24,11 @@ module Cask
       @quarantine = quarantine
     end
 
-    sig { override.returns(String) }
-    def name
-      cask.token
-    end
-
     sig { override.returns(T.nilable(::URL)) }
     def url
-      return if cask.url.nil?
+      return if (cask_url = cask.url).nil?
 
-      @url ||= ::URL.new(cask.url.to_s, cask.url.specs)
+      @url ||= ::URL.new(cask_url.to_s, cask_url.specs)
     end
 
     sig { override.returns(T.nilable(::Checksum)) }
@@ -70,20 +67,21 @@ module Cask
       downloaded_path
     end
 
+    sig { params(timeout: T.any(Float, Integer, NilClass)).returns([T.nilable(Time), Integer]) }
     def time_file_size(timeout: nil)
       raise ArgumentError, "not supported for this download strategy" unless downloader.is_a?(CurlDownloadStrategy)
 
       T.cast(downloader, CurlDownloadStrategy).resolved_time_file_size(timeout:)
     end
 
+    sig { returns(Pathname) }
     def basename
       downloader.basename
     end
 
     sig { override.params(filename: Pathname).void }
     def verify_download_integrity(filename)
-      official_cask_tap = @cask.tap&.official?
-      if @cask.sha256 == :no_check && !official_cask_tap
+      if no_checksum_defined? && !official_cask_tap?
         opoo "No checksum defined for cask '#{@cask}', skipping verification."
         return
       end
@@ -92,17 +90,14 @@ module Cask
     end
 
     sig { override.returns(String) }
-    def download_name
-      cask.token
-    end
+    def download_queue_name = "#{cask.token} (#{version})"
 
     sig { override.returns(String) }
-    def download_type
-      "cask"
-    end
+    def download_queue_type = "Cask"
 
     private
 
+    sig { params(path: Pathname).void }
     def quarantine(path)
       return if @quarantine.nil?
       return unless Quarantine.available?
@@ -112,6 +107,24 @@ module Cask
       else
         Quarantine.release!(download_path: path)
       end
+    end
+
+    sig { returns(T::Boolean) }
+    def official_cask_tap?
+      tap = @cask.tap
+      return false if tap.blank?
+
+      tap.official?
+    end
+
+    sig { returns(T::Boolean) }
+    def no_checksum_defined?
+      @cask.sha256 == :no_check
+    end
+
+    sig { override.returns(T::Boolean) }
+    def silence_checksum_missing_error?
+      no_checksum_defined? && official_cask_tap?
     end
 
     sig { override.returns(T.nilable(::URL)) }

@@ -33,8 +33,8 @@ module Tapioca
             source = constant.instance_method(method_name).source.lstrip
             # For more info on these DSLs:
             #   https://www.rubydoc.info/gems/rubocop-ast/RuboCop/AST/NodePattern/Macros
-            #   https://github.com/rubocop/rubocop-ast/blob/master/lib/rubocop/ast/node_pattern.rb
-            #   https://github.com/rubocop/rubocop-ast/blob/master/lib/rubocop/ast/node_pattern/method_definer.rb
+            #   https://github.com/rubocop/rubocop-ast/blob/HEAD/lib/rubocop/ast/node_pattern.rb
+            #   https://github.com/rubocop/rubocop-ast/blob/HEAD/lib/rubocop/ast/node_pattern/method_definer.rb
             # The type signatures below could maybe be stronger, but I only wanted to avoid errors:
             case source
             when /\Adef_node_matcher/

@@ -51,12 +51,12 @@ class Dependency
     end
     return false unless formula
 
+    # If the opt prefix doesn't exist: we likely have an incomplete installation.
+    return false unless formula.opt_prefix.exist?
+
     return true if formula.latest_version_installed?
 
     return false if minimum_version.blank?
-
-    # If the opt prefix doesn't exist: we likely have an incomplete installation.
-    return false unless formula.opt_prefix.exist?
 
     installed_keg = formula.any_installed_keg
     return false unless installed_keg

@@ -34,7 +34,6 @@ RSpec.describe Cask::Reinstall, :cask do
     output = Regexp.new <<~EOS
       ==> Downloading file:.*caffeine.zip
       Already downloaded: .*--caffeine.zip
-      ==> Implied `brew uninstall --cask local-caffeine`
       ==> Backing App 'Caffeine.app' up to '.*Caffeine.app'
       ==> Removing App '.*Caffeine.app'
       ==> Dispatching zap stanza

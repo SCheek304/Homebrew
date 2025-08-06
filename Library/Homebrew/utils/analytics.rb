@@ -4,7 +4,7 @@
 require "context"
 require "erb"
 require "settings"
-require "extend/cachable"
+require "cachable"
 
 module Utils
   # Helper module for fetching and reporting analytics data.
@@ -445,7 +445,7 @@ module Utils
           format "%#{index_width}s", index_header
         formatted_name_with_options_header =
           format "%-#{name_with_options_width}s",
-                 name_with_options_header[0..name_with_options_width-1]
+                 name_with_options_header[0..(name_with_options_width-1)]
         formatted_count_header =
           format "%#{count_width}s", count_header
         formatted_percent_header =
@@ -464,7 +464,7 @@ module Utils
           formatted_index = format "%-#{index_width}s", formatted_index
           formatted_name_with_options =
             format "%-#{name_with_options_width}s",
-                   name_with_options[0..name_with_options_width-1]
+                   name_with_options[0..(name_with_options_width-1)]
           formatted_count = format "%#{count_width}s", format_count(count)
           formatted_percent = if total_count.zero?
             format "%#{percent_width}s", format_percent(0)

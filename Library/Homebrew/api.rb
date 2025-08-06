@@ -1,20 +1,21 @@
-# typed: true # rubocop:todo Sorbet/StrictSigil
+# typed: strict
 # frozen_string_literal: true
 
 require "api/analytics"
 require "api/cask"
 require "api/formula"
-require "base64" # TODO: vendor this for Ruby 3.4.
+require "base64"
 
 module Homebrew
   # Helper functions for using Homebrew's formulae.brew.sh API.
   module API
     extend Cachable
 
-    HOMEBREW_CACHE_API = (HOMEBREW_CACHE/"api").freeze
-    HOMEBREW_CACHE_API_SOURCE = (HOMEBREW_CACHE/"api-source").freeze
+    HOMEBREW_CACHE_API = T.let((HOMEBREW_CACHE/"api").freeze, Pathname)
+    HOMEBREW_CACHE_API_SOURCE = T.let((HOMEBREW_CACHE/"api-source").freeze, Pathname)
+    TAP_MIGRATIONS_STALE_SECONDS = T.let(86400, Integer) # 1 day
 
-    sig { params(endpoint: String).returns(Hash) }
+    sig { params(endpoint: String).returns(T::Hash[String, T.untyped]) }
     def self.fetch(endpoint)
       return cache[endpoint] if cache.present? && cache.key?(endpoint)
 
@@ -33,10 +34,11 @@ module Homebrew
     end
 
     sig {
-      params(endpoint: String, target: Pathname, stale_seconds: Integer).returns([T.any(Array, Hash), T::Boolean])
+      params(endpoint: String, target: Pathname, stale_seconds: Integer, download_queue: T.nilable(DownloadQueue))
+        .returns([T.any(T::Array[T.untyped], T::Hash[String, T.untyped]), T::Boolean])
     }
     def self.fetch_json_api_file(endpoint, target: HOMEBREW_CACHE_API/endpoint,
-                                 stale_seconds: Homebrew::EnvConfig.api_auto_update_secs.to_i)
+                                 stale_seconds: Homebrew::EnvConfig.api_auto_update_secs.to_i, download_queue: nil)
       # Lazy-load dependency.
       require "development_tools"
 
@@ -63,6 +65,15 @@ module Homebrew
                         (Homebrew::EnvConfig.no_auto_update? && !Homebrew::EnvConfig.force_api_auto_update?) ||
                       ((Time.now - stale_seconds) < target.mtime))
       skip_download ||= Homebrew.running_as_root_but_not_owned_by_root?
+
+      if download_queue
+        unless skip_download
+          require "api/json_download"
+          download = Homebrew::API::JSONDownload.new(endpoint, target:, stale_seconds:)
+          download_queue.enqueue(download)
+        end
+        return [{}, false]
+      end
 
       json_data = begin
         begin
@@ -96,7 +107,8 @@ module Homebrew
 
         mtime = insecure_download ? Time.new(1970, 1, 1) : Time.now
         FileUtils.touch(target, mtime:) unless skip_download
-        JSON.parse(target.read, freeze: true)
+        # Can use `target.read` again when/if https://github.com/sorbet/sorbet/pull/8999 is merged/released.
+        JSON.parse(File.read(target, encoding: Encoding::UTF_8), freeze: true)
       rescue JSON::ParserError
         target.unlink
         retry_count += 1
@@ -122,14 +134,17 @@ module Homebrew
       end
     end
 
-    sig { params(json: Hash).returns(Hash) }
-    def self.merge_variations(json)
+    sig {
+      params(json:       T::Hash[String, T.untyped],
+             bottle_tag: ::Utils::Bottles::Tag).returns(T::Hash[String, T.untyped])
+    }
+    def self.merge_variations(json, bottle_tag: T.unsafe(nil))
       return json unless json.key?("variations")
 
-      bottle_tag = ::Utils::Bottles::Tag.new(system: Homebrew::SimulateSystem.current_os,
-                                             arch:   Homebrew::SimulateSystem.current_arch)
+      bottle_tag ||= Homebrew::SimulateSystem.current_tag
 
-      if (variation = json.dig("variations", bottle_tag.to_s).presence)
+      if (variation = json.dig("variations", bottle_tag.to_s).presence) ||
+         (variation = json.dig("variations", bottle_tag.to_sym).presence)
         json = json.merge(variation)
       end
 
@@ -137,7 +152,7 @@ module Homebrew
     end
 
     sig { params(names: T::Array[String], type: String, regenerate: T::Boolean).returns(T::Boolean) }
-    def self.write_names_file(names, type, regenerate:)
+    def self.write_names_file!(names, type, regenerate:)
       names_path = HOMEBREW_CACHE_API/"#{type}_names.txt"
       if !names_path.exist? || regenerate
         names_path.write(names.join("\n"))
@@ -147,7 +162,10 @@ module Homebrew
       false
     end
 
-    sig { params(json_data: Hash).returns([T::Boolean, T.any(String, Array, Hash)]) }
+    sig {
+      params(json_data: T::Hash[String, T.untyped])
+        .returns([T::Boolean, T.any(String, T::Array[T.untyped], T::Hash[String, T.untyped])])
+    }
     private_class_method def self.verify_and_parse_jws(json_data)
       signatures = json_data["signatures"]
       homebrew_signature = signatures&.find { |sig| sig.dig("header", "kid") == "homebrew-1" }

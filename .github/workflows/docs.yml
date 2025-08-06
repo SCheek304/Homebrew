@@ -12,7 +12,6 @@ env:
   HOMEBREW_DEVELOPER: 1
   HOMEBREW_NO_AUTO_UPDATE: 1
   HOMEBREW_NO_ENV_HINTS: 1
-  HOMEBREW_BOOTSNAP: 1
   HOMEBREW_NO_INSTALL_CLEANUP: 1
 
 defaults:
@@ -25,7 +24,7 @@ jobs:
     steps:
       - name: Set up Homebrew
         id: set-up-homebrew
-        uses: Homebrew/actions/setup-homebrew@master
+        uses: Homebrew/actions/setup-homebrew@main
         with:
           core: false
           cask: false
@@ -53,7 +52,7 @@ jobs:
         run: vale docs/
 
       - name: Install Ruby
-        uses: ruby/setup-ruby@32110d4e311bd8996b2a82bf2a43b714ccc91777 # v1.221.0
+        uses: ruby/setup-ruby@472790540115ce5bd69d399a020189a8c87d641f # v1.247.0
         with:
           bundler-cache: true
           working-directory: docs
@@ -68,7 +67,13 @@ jobs:
       - name: Generate formulae.brew.sh API samples
         if: github.repository == 'Homebrew/formulae.brew.sh'
         working-directory: docs
-        run: ../script/generate-api-samples.rb
+        run: ../script/generate-api-samples.rb --template
+
+      - name: Cache HTML Proofer
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: tmp/.htmlproofer
+          key: ${{ runner.os }}-htmlproofer
 
       - name: Build the site and check for broken links
         working-directory: docs

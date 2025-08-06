@@ -63,6 +63,8 @@ module Homebrew
           puts info
         else
           info = ""
+          default_branches = %w[main master].freeze
+
           taps.each_with_index do |tap, i|
             puts unless i.zero?
             info = "#{tap}: "
@@ -79,7 +81,7 @@ module Homebrew
               info += "\norigin: #{tap.remote}" if tap.remote != tap.default_remote
               info += "\nHEAD: #{tap.git_head || "(none)"}"
               info += "\nlast commit: #{tap.git_last_commit || "never"}"
-              info += "\nbranch: #{tap.git_branch || "(none)"}" if tap.git_branch != "master"
+              info += "\nbranch: #{tap.git_branch || "(none)"}" if default_branches.exclude?(tap.git_branch)
             else
               info += "Not installed"
             end

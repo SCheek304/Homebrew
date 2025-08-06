@@ -6,10 +6,11 @@ plugins:
       plugin_class_name: RuboCop::Performance::Plugin
   - rubocop-rspec:
       plugin_class_name: RuboCop::RSpec::Plugin
+  - rubocop-sorbet:
+      plugin_class_name: RuboCop::Sorbet::Plugin
 
 require:
   - ./Homebrew/rubocops.rb
-  - rubocop-sorbet
 
 inherit_mode:
   merge:
@@ -17,12 +18,16 @@ inherit_mode:
     - Exclude
 
 AllCops:
+  # TODO: This is the default parser in Ruby >= 3.4
+  # https://github.com/rubocop/rubocop-ast/blob/6b9136235219e9448ee4f369e17cf69bcd9db621/lib/rubocop/ast/processed_source.rb#L385
+  ParserEngine: parser_prism
   TargetRubyVersion: 3.3
   NewCops: enable
   Include:
     - "**/*.rbi"
   Exclude:
-    - "Homebrew/sorbet/rbi/{dsl,gems}/**/*.rbi"
+    - "Homebrew/sorbet/rbi/{annotations,dsl,gems}/**/*.rbi"
+    - "Homebrew/sorbet/rbi/parser*.rbi"
     - "Homebrew/bin/*"
     - "Homebrew/vendor/**/*"
     - "Taps/*/*/vendor/**/*"
@@ -211,6 +216,10 @@ Naming/MethodParameterName:
     merge:
       - AllowedNames
 
+# Allows a nicer API for boolean methods with side effects.
+Naming/PredicateMethod:
+  AllowBangMethods: true
+
 # Both styles are used depending on context,
 # e.g. `sha256` and `something_countable_1`.
 Naming/VariableNumber:
@@ -234,6 +243,8 @@ RSpec:
 
 # Intentionally disabled as it doesn't fit with our code style.
 RSpec/AnyInstance:
+  Enabled: false
+RSpec/IncludeExamples:
   Enabled: false
 RSpec/SpecFilePathFormat:
   Enabled: false
@@ -297,6 +308,7 @@ Sorbet/StrictSigil:
     - "Homebrew/utils/ruby_check_version_script.rb" # A standalone script.
     - "Homebrew/{standalone,startup}/*.rb" # These are loaded before sorbet-runtime
     - "Homebrew/test/**/*.rb"
+    - "Homebrew/bundle/{formula_dumper,checker,commands/exec}.rb" # These aren't typed: true yet.
 
 Sorbet/TrueSigil:
   Enabled: true
@@ -409,12 +421,10 @@ Style/MutableConstant:
 Style/NumericLiteralPrefix:
   EnforcedOctalStyle: zero_only
 
-# Only use this for numbers >= `1_000_000`.
+# Only require this for numbers >= `10_000_000_000`.
 Style/NumericLiterals:
-  MinDigits: 7
+  MinDigits: 11
   Strict: true
-  Exclude:
-    - "**/Brewfile"
 
 Style/OpenStructUse:
   Exclude:

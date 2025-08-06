@@ -211,7 +211,7 @@ module Utils
     end
 
     sig {
-      params(
+      overridable.params(
         args:         String,
         print_stdout: T.any(T::Boolean, Symbol),
         options:      T.untyped,
@@ -264,7 +264,7 @@ module Utils
       curl(*args, **options)
     end
 
-    sig { params(args: String, options: T.untyped).returns(SystemCommand::Result) }
+    sig { overridable.params(args: String, options: T.untyped).returns(SystemCommand::Result) }
     def curl_output(*args, **options)
       curl_with_workarounds(*args, print_stderr: false, show_output: true, **options)
     end
@@ -277,15 +277,20 @@ module Utils
       ).returns(T::Hash[Symbol, T.untyped])
     }
     def curl_headers(*args, wanted_headers: [], **options)
-      get_retry_args = ["--request", "GET"]
+      base_args = ["--fail", "--location", "--silent"]
+      get_retry_args = []
+      if (is_post_request = args.include?("POST"))
+        base_args << "--dump-header" << "-"
+      else
+        base_args << "--head"
+        get_retry_args << "--request" << "GET"
+      end
+
       # This is a workaround for https://github.com/Homebrew/brew/issues/18213
       get_retry_args << "--http1.1" if curl_version >= Version.new("8.7") && curl_version < Version.new("8.10")
 
       [[], get_retry_args].each do |request_args|
-        result = curl_output(
-          "--fail", "--location", "--silent", "--head", *request_args, *args,
-          **options
-        )
+        result = curl_output(*base_args, *request_args, *args, **options)
 
         # We still receive usable headers with certain non-successful exit
         # statuses, so we special case them below.
@@ -295,6 +300,7 @@ module Utils
           CURL_RECV_ERROR_EXIT_CODE,
         ].include?(result.exit_status)
           parsed_output = parse_curl_output(result.stdout)
+          return parsed_output if is_post_request
 
           if request_args.empty?
             # If we didn't get any wanted header yet, retry using `GET`.
@@ -436,7 +442,7 @@ module Utils
       end
 
       if url.start_with?("https://") && Homebrew::EnvConfig.no_insecure_redirect? &&
-         (details[:final_url].present? && !details[:final_url].start_with?("https://"))
+         details[:final_url].present? && !details[:final_url].start_with?("https://")
         return "The #{url_type} #{url} redirects back to HTTP"
       end
 
@@ -453,7 +459,7 @@ module Utils
 
       http_with_https_available =
         url.start_with?("http://") &&
-        (secure_details[:final_url].present? && secure_details[:final_url].start_with?("https://"))
+        secure_details[:final_url].present? && secure_details[:final_url].start_with?("https://")
 
       if (etag_match || content_length_match || file_match) && http_with_https_available
         return "The #{url_type} #{url} should use HTTPS rather than HTTP"
@@ -466,7 +472,7 @@ module Utils
       https_content = secure_details[:file]&.scrub&.gsub(no_protocol_file_contents, "/")
 
       # Check for the same content after removing all protocols
-      if (http_content && https_content) && (http_content == https_content) && http_with_https_available
+      if http_content && https_content && (http_content == https_content) && http_with_https_available
         return "The #{url_type} #{url} should use HTTPS rather than HTTP"
       end
 

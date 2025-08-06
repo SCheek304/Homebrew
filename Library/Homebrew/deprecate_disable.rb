@@ -41,6 +41,22 @@ module DeprecateDisable
     :disabled if formula_or_cask.disabled?
   end
 
+  sig {
+    params(
+      formula: T.nilable(String),
+      cask:    T.nilable(String),
+    ).returns(T.nilable(String))
+  }
+  def replacement_with_type(formula, cask)
+    if formula && formula == cask
+      formula
+    elsif formula
+      "--formula #{formula}"
+    elsif cask
+      "--cask #{cask}"
+    end
+  end
+
   sig { params(formula_or_cask: T.any(Formula, Cask::Cask)).returns(T.nilable(String)) }
   def message(formula_or_cask)
     return if type(formula_or_cask).blank?
@@ -77,10 +93,16 @@ module DeprecateDisable
       end
     end
 
-    replacement = if formula_or_cask.deprecated?
-      formula_or_cask.deprecation_replacement
-    elsif formula_or_cask.disabled?
-      formula_or_cask.disable_replacement
+    replacement = if formula_or_cask.disabled?
+      replacement_with_type(
+        formula_or_cask.disable_replacement_formula,
+        formula_or_cask.disable_replacement_cask,
+      )
+    elsif formula_or_cask.deprecated?
+      replacement_with_type(
+        formula_or_cask.deprecation_replacement_formula,
+        formula_or_cask.deprecation_replacement_cask,
+      )
     end
 
     if replacement.present?

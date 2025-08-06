@@ -8,7 +8,7 @@ require "cask/dsl"
 require "cask/metadata"
 require "cask/tab"
 require "utils/bottles"
-require "extend/api_hashable"
+require "api_hashable"
 
 module Cask
   # An instance of a cask.
@@ -32,7 +32,7 @@ module Cask
 
     def self.all(eval_all: false)
       if !eval_all && !Homebrew::EnvConfig.eval_all?
-        raise ArgumentError, "Cask::Cask#all cannot be used without `--eval-all` or HOMEBREW_EVAL_ALL"
+        raise ArgumentError, "Cask::Cask#all cannot be used without `--eval-all` or `HOMEBREW_EVAL_ALL=1`"
       end
 
       # Load core casks from tokens so they load from the API when the core cask is not tapped.
@@ -361,40 +361,45 @@ module Cask
 
     def to_h
       {
-        "token"                   => token,
-        "full_token"              => full_name,
-        "old_tokens"              => old_tokens,
-        "tap"                     => tap&.name,
-        "name"                    => name,
-        "desc"                    => desc,
-        "homepage"                => homepage,
-        "url"                     => url,
-        "url_specs"               => url_specs,
-        "version"                 => version,
-        "installed"               => installed_version,
-        "installed_time"          => install_time&.to_i,
-        "bundle_version"          => bundle_long_version,
-        "bundle_short_version"    => bundle_short_version,
-        "outdated"                => outdated?,
-        "sha256"                  => sha256,
-        "artifacts"               => artifacts_list,
-        "caveats"                 => (caveats unless caveats.empty?),
-        "depends_on"              => depends_on,
-        "conflicts_with"          => conflicts_with,
-        "container"               => container&.pairs,
-        "auto_updates"            => auto_updates,
-        "deprecated"              => deprecated?,
-        "deprecation_date"        => deprecation_date,
-        "deprecation_reason"      => deprecation_reason,
-        "deprecation_replacement" => deprecation_replacement,
-        "disabled"                => disabled?,
-        "disable_date"            => disable_date,
-        "disable_reason"          => disable_reason,
-        "disable_replacement"     => disable_replacement,
-        "tap_git_head"            => tap_git_head,
-        "languages"               => languages,
-        "ruby_source_path"        => ruby_source_path,
-        "ruby_source_checksum"    => ruby_source_checksum,
+        "token"                           => token,
+        "full_token"                      => full_name,
+        "old_tokens"                      => old_tokens,
+        "tap"                             => tap&.name,
+        "name"                            => name,
+        "desc"                            => desc,
+        "homepage"                        => homepage,
+        "url"                             => url,
+        "url_specs"                       => url_specs,
+        "version"                         => version,
+        "autobump"                        => autobump?,
+        "no_autobump_message"             => no_autobump_message,
+        "skip_livecheck"                  => livecheck.skip?,
+        "installed"                       => installed_version,
+        "installed_time"                  => install_time&.to_i,
+        "bundle_version"                  => bundle_long_version,
+        "bundle_short_version"            => bundle_short_version,
+        "outdated"                        => outdated?,
+        "sha256"                          => sha256,
+        "artifacts"                       => artifacts_list,
+        "caveats"                         => (Tty.strip_ansi(caveats) unless caveats.empty?),
+        "depends_on"                      => depends_on,
+        "conflicts_with"                  => conflicts_with,
+        "container"                       => container&.pairs,
+        "auto_updates"                    => auto_updates,
+        "deprecated"                      => deprecated?,
+        "deprecation_date"                => deprecation_date,
+        "deprecation_reason"              => deprecation_reason,
+        "deprecation_replacement_formula" => deprecation_replacement_formula,
+        "deprecation_replacement_cask"    => deprecation_replacement_cask,
+        "disabled"                        => disabled?,
+        "disable_date"                    => disable_date,
+        "disable_reason"                  => disable_reason,
+        "disable_replacement_formula"     => disable_replacement_formula,
+        "disable_replacement_cask"        => disable_replacement_cask,
+        "tap_git_head"                    => tap_git_head,
+        "languages"                       => languages,
+        "ruby_source_path"                => ruby_source_path,
+        "ruby_source_checksum"            => ruby_source_checksum,
       }
     end
 
@@ -411,14 +416,14 @@ module Cask
 
       if @dsl.on_system_blocks_exist?
         begin
-          MacOSVersion::SYMBOLS.keys.product(OnSystem::ARCH_OPTIONS).each do |os, arch|
-            bottle_tag = ::Utils::Bottles::Tag.new(system: os, arch:)
-            next unless bottle_tag.valid_combination?
-            next if depends_on.macos &&
+          OnSystem::VALID_OS_ARCH_TAGS.each do |bottle_tag|
+            next if bottle_tag.linux? && @dsl.os.nil?
+            next if bottle_tag.macos? &&
+                    depends_on.macos &&
                     !@dsl.depends_on_set_in_block? &&
                     !depends_on.macos.allows?(bottle_tag.to_macos_version)
 
-            Homebrew::SimulateSystem.with(os:, arch:) do
+            Homebrew::SimulateSystem.with_tag(bottle_tag) do
               refresh
 
               to_h.each do |key, value|

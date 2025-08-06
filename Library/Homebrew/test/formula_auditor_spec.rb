@@ -519,7 +519,7 @@ RSpec.describe Homebrew::FormulaAuditor do
 
       fa.audit_specs
       expect(fa.problems.first[:message])
-        .to match("resource name should be `FooSomething` to match the PyPI package name")
+        .to match("`resource` name should be 'FooSomething' to match the PyPI package name")
     end
 
     it "reports a problem if the resource name does not match the python wheel name" do
@@ -538,7 +538,7 @@ RSpec.describe Homebrew::FormulaAuditor do
 
       fa.audit_specs
       expect(fa.problems.first[:message])
-        .to match("resource name should be `FooSomething` to match the PyPI package name")
+        .to match("`resource` name should be 'FooSomething' to match the PyPI package name")
     end
   end
 
@@ -788,7 +788,7 @@ RSpec.describe Homebrew::FormulaAuditor do
       RUBY
 
       fa.audit_specs
-      expect(fa.problems.first[:message]).to match "Versioned formulae should not have a `HEAD` spec"
+      expect(fa.problems.first[:message]).to match "Versioned formulae should not have a `head` spec"
     end
 
     it "allows versioned formulae on the allowlist to have a `HEAD` spec" do
@@ -911,7 +911,7 @@ RSpec.describe Homebrew::FormulaAuditor do
       context "when uncommitted should not decrease" do
         before { formula_gsub "foo-1.0.tar.gz", "foo-0.9.tar.gz" }
 
-        it { is_expected.to match("stable version should not decrease (from 1.0 to 0.9)") }
+        it { is_expected.to match("Stable: version should not decrease (from 1.0 to 0.9)") }
       end
 
       context "when committed can decrease" do
@@ -991,31 +991,31 @@ RSpec.describe Homebrew::FormulaAuditor do
       describe "with the same version, should not decrease" do
         before { formula_gsub_origin_commit "revision 2", "revision 1" }
 
-        it { is_expected.to match("revision should not decrease (from 2 to 1)") }
+        it { is_expected.to match("`revision` should not decrease (from 2 to 1)") }
       end
 
       describe "should not be removed with the same version" do
         before { formula_gsub_origin_commit "revision 2" }
 
-        it { is_expected.to match("revision should not decrease (from 2 to 0)") }
+        it { is_expected.to match("`revision` should not decrease (from 2 to 0)") }
       end
 
       describe "should not decrease with the same, uncommitted version" do
         before { formula_gsub "revision 2", "revision 1" }
 
-        it { is_expected.to match("revision should not decrease (from 2 to 1)") }
+        it { is_expected.to match("`revision` should not decrease (from 2 to 1)") }
       end
 
       describe "should be removed with a newer version" do
         before { formula_gsub_origin_commit "foo-1.0.tar.gz", "foo-1.1.tar.gz" }
 
-        it { is_expected.to match("'revision 2' should be removed") }
+        it { is_expected.to match("`revision 2` should be removed") }
       end
 
       describe "should be removed with a newer local version" do
         before { formula_gsub "foo-1.0.tar.gz", "foo-1.1.tar.gz" }
 
-        it { is_expected.to match("'revision 2' should be removed") }
+        it { is_expected.to match("`revision 2` should be removed") }
       end
 
       describe "should not warn on an newer version revision removal" do
@@ -1044,7 +1044,7 @@ RSpec.describe Homebrew::FormulaAuditor do
           formula_gsub "revision 2", "revision 4"
         end
 
-        it { is_expected.to match("revisions should only increment by 1") }
+        it { is_expected.to match("`revision` should only increment by 1") }
       end
 
       describe "should not warn on past increment by more than 1" do
@@ -1094,7 +1094,7 @@ RSpec.describe Homebrew::FormulaAuditor do
       describe "should not decrease with the same version" do
         before { formula_gsub_origin_commit "version_scheme 1" }
 
-        it { is_expected.to match("version_scheme should not decrease (from 1 to 0)") }
+        it { is_expected.to match("`version_scheme` should not decrease (from 1 to 0)") }
       end
 
       describe "should not decrease with a new version" do
@@ -1104,7 +1104,7 @@ RSpec.describe Homebrew::FormulaAuditor do
           formula_gsub_origin_commit "version_scheme 1", ""
         end
 
-        it { is_expected.to match("version_scheme should not decrease (from 1 to 0)") }
+        it { is_expected.to match("`version_scheme` should not decrease (from 1 to 0)") }
       end
 
       describe "should only increment by 1" do
@@ -1115,7 +1115,7 @@ RSpec.describe Homebrew::FormulaAuditor do
           formula_gsub_origin_commit "# no version_scheme", "version_scheme 3"
         end
 
-        it { is_expected.to match("version_schemes should only increment by 1") }
+        it { is_expected.to match("`version_scheme` should only increment by 1") }
       end
     end
   end
@@ -1261,7 +1261,7 @@ RSpec.describe Homebrew::FormulaAuditor do
       allow(File).to receive(:open).and_return("")
     end
 
-    specify "it warns when conflicting with non-existing formula" do
+    specify "it warns when conflicting with non-existing formula", :no_api do
       foo = formula("foo") do
         url "https://brew.sh/bar-1.0.tgz"
 
@@ -1275,7 +1275,7 @@ RSpec.describe Homebrew::FormulaAuditor do
         .to match("Can't find conflicting formula \"bar\"")
     end
 
-    specify "it warns when conflicting with itself" do
+    specify "it warns when conflicting with itself", :no_api do
       foo = formula("foo") do
         url "https://brew.sh/bar-1.0.tgz"
 
@@ -1290,7 +1290,7 @@ RSpec.describe Homebrew::FormulaAuditor do
         .to match("Formula should not conflict with itself")
     end
 
-    specify "it warns when another formula does not have a symmetric conflict" do
+    specify "it warns when another formula does not have a symmetric conflict", :no_api do
       stub_formula_loader formula("gcc") { url "gcc-1.0" }
       stub_formula_loader formula("glibc") { url "glibc-1.0" }
 
@@ -1341,6 +1341,36 @@ RSpec.describe Homebrew::FormulaAuditor do
       mkdir_p fa.formula.prefix
       fa.audit_deprecate_disable
       expect(fa.problems).to be_empty
+    end
+  end
+
+  describe "#audit_no_autobump" do
+    it "warns when autobump exclusion reason is not suitable for new formula" do
+      fa = formula_auditor "foo", <<~RUBY, new_formula: true
+        class Foo < Formula
+          url "https://brew.sh/foo-1.0.tgz"
+
+          no_autobump! because: :requires_manual_review
+        end
+      RUBY
+
+      fa.audit_no_autobump
+      expect(fa.new_formula_problems.first[:message])
+        .to match("`:requires_manual_review` is a temporary reason intended for existing packages, " \
+                  "use a different reason instead.")
+    end
+
+    it "does not warn when autobump exclusion reason is allowed" do
+      fa = formula_auditor "foo", <<~RUBY, new_formula: true
+        class Foo < Formula
+          url "https://brew.sh/foo-1.0.tgz"
+
+          no_autobump! because: "foo bar"
+        end
+      RUBY
+
+      fa.audit_no_autobump
+      expect(fa.new_formula_problems).to be_empty
     end
   end
 end

@@ -6,6 +6,7 @@ require "cask/cask"
 require "uri"
 require "utils/curl"
 require "extend/hash/keys"
+require "api"
 
 module Cask
   # Loads a cask from various sources.
@@ -104,13 +105,21 @@ module Cask
           return
         end
 
-        return if %w[.rb .json].exclude?(path.extname)
         return unless path.expand_path.exist?
+        return if invalid_path?(path)
 
         return if Homebrew::EnvConfig.forbid_packages_from_paths? &&
                   !path.realpath.to_s.start_with?("#{Caskroom.path}/", "#{HOMEBREW_LIBRARY}/Taps/")
 
         new(path)
+      end
+
+      sig { params(pathname: Pathname, valid_extnames: T::Array[String]).returns(T::Boolean) }
+      def self.invalid_path?(pathname, valid_extnames: %w[.rb .json])
+        return true if valid_extnames.exclude?(pathname.extname)
+
+        @invalid_basenames ||= %w[INSTALL_RECEIPT.json sbom.spdx.json].freeze
+        @invalid_basenames.include?(pathname.basename.to_s)
       end
 
       attr_reader :token, :path
@@ -135,8 +144,10 @@ module Cask
         @content = path.read(encoding: "UTF-8")
         @config = config
 
-        if path.extname == ".json"
-          return FromAPILoader.new(token, from_json: JSON.parse(@content), path:).load(config:)
+        if !self.class.invalid_path?(path, valid_extnames: %w[.json]) &&
+           (from_json = JSON.parse(@content).presence) &&
+           from_json.is_a?(Hash)
+          return FromAPILoader.new(token, from_json:, path:).load(config:)
         end
 
         begin
@@ -170,7 +181,7 @@ module Cask
 
         # Cache compiled regex
         @uri_regex ||= begin
-          uri_regex = ::URI::DEFAULT_PARSER.make_regexp
+          uri_regex = ::URI::RFC2396_PARSER.make_regexp
           Regexp.new("\\A#{uri_regex.source}\\Z", uri_regex.options)
         end
 
@@ -284,7 +295,7 @@ module Cask
       sig { returns(Pathname) }
       attr_reader :path
 
-      sig { returns(T.nilable(Hash)) }
+      sig { returns(T.nilable(T::Hash[String, T.untyped])) }
       attr_reader :from_json
 
       sig {
@@ -306,7 +317,13 @@ module Cask
         new("#{tap}/#{token}")
       end
 
-      sig { params(token: String, from_json: Hash, path: T.nilable(Pathname)).void }
+      sig {
+        params(
+          token:     String,
+          from_json: T.nilable(T::Hash[String, T.untyped]),
+          path:      T.nilable(Pathname),
+        ).void
+      }
       def initialize(token, from_json: T.unsafe(nil), path: nil)
         @token = token.sub(%r{^homebrew/(?:homebrew-)?cask/}i, "")
         @sourcefile_path = path || Homebrew::API::Cask.cached_json_file_path
@@ -400,7 +417,7 @@ module Cask
             container(**container_hash)
           end
 
-          json_cask[:artifacts].each do |artifact|
+          json_cask[:artifacts]&.each do |artifact|
             # convert generic string replacements into actual ones
             artifact = cask.loader.from_h_gsubs(artifact, appdir)
             key = artifact.keys.first
@@ -605,7 +622,7 @@ module Cask
         NullLoader,
       ].each do |loader_class|
         if (loader = loader_class.try_new(ref, warn:))
-          $stderr.puts "#{$PROGRAM_NAME} (#{loader.class}): loading #{ref}" if debug?
+          $stderr.puts "#{$PROGRAM_NAME} (#{loader.class}): loading #{ref}" if verbose? && debug?
           return loader
         end
       end

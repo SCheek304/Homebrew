@@ -21,12 +21,22 @@ module Homebrew
 
       sig { override.void }
       def run
+        # Needed for Manpages.regenerate_man_pages below
+        Homebrew.install_bundler_gems!(groups: ["man"])
+
         # We assume that only public members wish to be included in the README
         public_members = GitHub.public_member_usernames("Homebrew")
         maintainers = GitHub.members_by_team("Homebrew", "maintainers")
 
+        # Not all PLC members are Homebrew GitHub organisation members any more
+        non_maintainer_plc_members = {
+          colindean:   "Colin Dean",
+          mozzadrella: "Vanessa Gennarelli",
+        }.transform_keys(&:to_s)
+        public_members += non_maintainer_plc_members.keys
+
         members = {
-          plc:         GitHub.members_by_team("Homebrew", "plc"),
+          plc:         GitHub.members_by_team("Homebrew", "plc").merge(non_maintainer_plc_members),
           tsc:         GitHub.members_by_team("Homebrew", "tsc"),
           maintainers:,
         }

@@ -128,10 +128,12 @@ module SystemConfig
         out.puts "#{tap_name} origin: #{tap.remote}" if tap.remote != tap.default_remote
         out.puts "#{tap_name} HEAD: #{tap.git_head || "(none)"}"
         out.puts "#{tap_name} last commit: #{tap.git_last_commit || "never"}"
-        out.puts "#{tap_name} branch: #{tap.git_branch || "(none)"}" if tap.git_branch != "master"
+        default_branches = %w[main master].freeze
+        out.puts "#{tap_name} branch: #{tap.git_branch || "(none)"}" if default_branches.exclude?(tap.git_branch)
       end
 
-      if (json_file = Homebrew::API::HOMEBREW_CACHE_API/json_file_name) && json_file.exist?
+      json_file = Homebrew::API::HOMEBREW_CACHE_API/json_file_name
+      if json_file.exist?
         out.puts "#{tap_name} JSON: #{json_file.mtime.utc.strftime("%d %b %H:%M UTC")}"
       elsif !tap.installed?
         out.puts "#{tap_name}: N/A"
@@ -194,7 +196,6 @@ module SystemConfig
       out.puts hardware if hardware
       host_software_config(out)
     end
-    alias dump_generic_verbose_config dump_verbose_config
   end
 end
 

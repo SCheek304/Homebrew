@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-RSpec.describe Cask::DSL, :cask do
+RSpec.describe Cask::DSL, :cask, :no_api do
   let(:cask) { Cask::CaskLoader.load(token) }
   let(:token) { "basic-cask" }
 
@@ -151,6 +151,25 @@ RSpec.describe Cask::DSL, :cask do
         it "stores only the intel checksum" do
           expect(cask.sha256).to eq("imasha2intel")
         end
+      end
+    end
+  end
+
+  describe "no_autobump! stanze" do
+    it "returns true if no_autobump! is not set" do
+      expect(cask.autobump?).to be(true)
+    end
+
+    context "when no_autobump! is set" do
+      let(:cask) do
+        Cask::Cask.new("checksum-cask") do
+          no_autobump! because: "some reason"
+        end
+      end
+
+      it "returns false" do
+        expect(cask.autobump?).to be(false)
+        expect(cask.no_autobump_message).to eq("some reason")
       end
     end
   end

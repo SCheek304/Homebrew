@@ -28,6 +28,9 @@ module Homebrew::EnvConfig
     sig { returns(T::Boolean) }
     def artifact_domain_no_fallback?; end
 
+    sig { returns(T::Boolean) }
+    def ask?; end
+
     sig { returns(T.nilable(::String)) }
     def auto_update_secs; end
 
@@ -39,9 +42,6 @@ module Homebrew::EnvConfig
 
     sig { returns(T.nilable(::String)) }
     def bat_theme; end
-
-    sig { returns(T::Boolean) }
-    def bootsnap?; end
 
     sig { returns(String) }
     def bottle_domain; end
@@ -109,14 +109,23 @@ module Homebrew::EnvConfig
     sig { returns(T.nilable(::String)) }
     def docker_registry_token; end
 
+    sig { returns(Integer) }
+    def download_concurrency; end
+
     sig { returns(T.nilable(::String)) }
     def editor; end
+
+    sig { returns(T::Boolean) }
+    def env_sync_strict?; end
 
     sig { returns(T::Boolean) }
     def eval_all?; end
 
     sig { returns(Integer) }
     def fail_log_lines; end
+
+    sig { returns(T::Boolean) }
+    def forbid_casks?; end
 
     sig { returns(T::Boolean) }
     def forbid_packages_from_paths?; end

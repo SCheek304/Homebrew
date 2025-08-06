@@ -222,7 +222,7 @@ There are a few ideas to fix this problem:
 
 So we let software be. Anything installed with Homebrew Cask should behave the same as if it were installed manually. But since we also want to support software that doesn’t self-upgrade, we add [`auto_updates true`](https://github.com/Homebrew/homebrew-cask/blob/aa461148bbb5119af26b82cccf5003e2b4e50d95/Casks/a/alfred.rb#L18) to casks for software that does, which excludes them from `brew upgrade`.
 
-Casks which use [`version :latest`](https://docs.brew.sh/Cask-Cookbook#version-latest) are also excluded, because we have no way to track their installed version. It helps to ask the developers of such software to provide versioned releases (i.e. include the version in the path of the download `url`).
+Casks which use [`version :latest`](Cask-Cookbook.md#special-value-latest) are also excluded, because we have no way to track their installed version. It helps to ask the developers of such software to provide versioned releases (i.e. include the version in the path of the download `url`).
 
 If you still want to force software to be upgraded via Homebrew Cask, you can reference it specifically in the `upgrade` command:
 

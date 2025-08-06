@@ -17,7 +17,8 @@ FORMULA_COMPONENT_PRECEDENCE_LIST = T.let([
   [{ name: :head,      type: :method_call }],
   [{ name: :stable,    type: :block_call }],
   [{ name: :livecheck, type: :block_call }],
-  [{ name: :bottle,    type: :block_call }],
+  [{ name: :no_autobump!, type: :method_call }],
+  [{ name: :bottle, type: :block_call }],
   [{ name: :pour_bottle?, type: :block_call }],
   [{ name: :head,      type: :block_call }],
   [{ name: :bottle,    type: :method_call }],
@@ -51,4 +52,4 @@ FORMULA_COMPONENT_PRECEDENCE_LIST = T.let([
   [{ name: :caveats, type: :method_definition }],
   [{ name: :plist_options, type: :method_call }, { name: :plist, type: :method_definition }],
   [{ name: :test, type: :block_call }],
-].freeze, T::Array[[{ name: Symbol, type: Symbol }]])
+].freeze, T::Array[T::Array[{ name: Symbol, type: Symbol }]])

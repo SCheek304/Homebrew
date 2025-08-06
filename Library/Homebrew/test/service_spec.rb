@@ -984,7 +984,7 @@ RSpec.describe Homebrew::Service do
       expect(command).to eq(["#{HOMEBREW_PREFIX}/opt/#{name}/bin/beanstalkd", "test"])
     end
 
-    it "returns nil on Linux", :needs_linux do
+    it "returns empty on Linux", :needs_linux do
       f = stub_formula do
         service do
           run macos: [opt_bin/"beanstalkd", "test"]
@@ -993,7 +993,7 @@ RSpec.describe Homebrew::Service do
       end
 
       command = f.service.command
-      expect(command).to be_nil
+      expect(command).to be_empty
     end
 
     it "returns @run data on macOS", :needs_macos do
@@ -1008,7 +1008,7 @@ RSpec.describe Homebrew::Service do
       expect(command).to eq(["#{HOMEBREW_PREFIX}/opt/#{name}/bin/beanstalkd", "test"])
     end
 
-    it "returns nil on macOS", :needs_macos do
+    it "returns empty on macOS", :needs_macos do
       f = stub_formula do
         service do
           run linux: [opt_bin/"beanstalkd", "test"]
@@ -1017,7 +1017,7 @@ RSpec.describe Homebrew::Service do
       end
 
       command = f.service.command
-      expect(command).to be_nil
+      expect(command).to be_empty
     end
 
     it "returns appropriate @run data on Linux", :needs_linux do

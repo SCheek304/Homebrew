@@ -3,6 +3,7 @@
 
 require "abstract_command"
 require "utils/git"
+require "fileutils"
 
 module Homebrew
   module DevCmd
@@ -11,14 +12,13 @@ module Homebrew
         description <<~EOS
           Install and commit Homebrew's vendored gems.
         EOS
-
         comma_array "--update",
                     description: "Update the specified list of vendored gems to the latest version."
-        switch      "--no-commit",
-                    description: "Do not generate a new commit upon completion."
-        switch     "--non-bundler-gems",
-                   description: "Update vendored gems that aren't using Bundler.",
-                   hidden:      true
+        switch "--no-commit",
+               description: "Do not generate a new commit upon completion."
+        switch "--non-bundler-gems",
+               description: "Update vendored gems that aren't using Bundler.",
+               hidden:      true
 
         named_args :none
       end
@@ -28,6 +28,7 @@ module Homebrew
         Homebrew.install_bundler!
 
         ENV["BUNDLE_WITH"] = Homebrew.valid_gem_groups.join(":")
+        ENV["BUNDLER_VERSION"] = HOMEBREW_BUNDLER_VERSION
 
         ohai "cd #{HOMEBREW_LIBRARY_PATH}"
         HOMEBREW_LIBRARY_PATH.cd do

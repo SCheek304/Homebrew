@@ -2,7 +2,7 @@
 # When bumping to a new major/minor version, also update the bounds in the Gemfile
 # HOMEBREW_LIBRARY set by bin/brew
 # shellcheck disable=SC2154
-export HOMEBREW_REQUIRED_RUBY_VERSION="3.3"
+export HOMEBREW_REQUIRED_RUBY_VERSION="3.4"
 HOMEBREW_PORTABLE_RUBY_VERSION="$(cat "${HOMEBREW_LIBRARY}/Homebrew/vendor/portable-ruby-version")"
 
 # Disable Ruby options we don't need.
@@ -132,6 +132,10 @@ If there's no Homebrew Portable Ruby available for your processor:
     then
       brew vendor-install ruby || odie "${upgrade_fail}"
     fi
+    HOMEBREW_BOOTSNAP_GEM_PATH="$(
+      shopt -s nullglob
+      echo "${vendor_ruby_root}"/lib/ruby/gems/*/gems/bootsnap-*/lib/bootsnap 2>/dev/null
+    )"
   else
     if system_ruby_supported
     then
@@ -146,7 +150,7 @@ If there's no Homebrew Portable Ruby available for your processor:
     fi
   fi
 
-  export HOMEBREW_RUBY_PATH
+  export HOMEBREW_RUBY_PATH HOMEBREW_BOOTSNAP_GEM_PATH
   [[ -n "${HOMEBREW_LINUX}" && -n "${TERMINFO_DIRS}" ]] && export TERMINFO_DIRS
 }
 

@@ -41,7 +41,9 @@ module Cask
         super
 
         target = target_hash[:target]
+        @source = nil
         @source_string = source.to_s
+        @target = nil
         @target_string = target.to_s
       end
 

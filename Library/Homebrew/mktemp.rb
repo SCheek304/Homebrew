@@ -5,8 +5,6 @@
 # Each instance is only intended to be used once.
 # Can also be used to create a temporary directory with the brew instance's group.
 class Mktemp
-  include FileUtils
-
   # Path to the tmpdir used in this run
   sig { returns(T.nilable(Pathname)) }
   attr_reader :tmpdir
@@ -106,11 +104,11 @@ class Mktemp
   sig { params(path: Pathname).void }
   def chmod_rm_rf(path)
     if path.directory? && !path.symlink?
-      chmod("u+rw", path) if path.owned? # Need permissions in order to see the contents
+      FileUtils.chmod("u+rw", path) if path.owned? # Need permissions in order to see the contents
       path.children.each { |child| chmod_rm_rf(child) }
-      rmdir(path)
+      FileUtils.rmdir(path)
     else
-      rm_f(path)
+      FileUtils.rm_f(path)
     end
   rescue
     nil # Just skip this directory.

@@ -509,14 +509,6 @@ RSpec.describe Version do
         .to be_detected_from("https://codeload.github.com/gsamokovarov/jump/tar.gz/v0.7.1")
     end
 
-    specify "elasticsearch alpha style" do
-      expect(described_class.new("5.0.0-alpha5"))
-        .to be_detected_from(
-          "https://download.elastic.co/elasticsearch/release/org/elasticsearch" \
-          "/distribution/tar/elasticsearch/5.0.0-alpha5/elasticsearch-5.0.0-alpha5.tar.gz",
-        )
-    end
-
     specify "gloox beta style" do
       expect(described_class.new("1.0-beta7"))
         .to be_detected_from("https://camaya.net/download/gloox-1.0-beta7.tar.bz2")

@@ -10,7 +10,6 @@ require "utils/fork"
 # Helper class for running a sub-process inside of a sandboxed environment.
 class Sandbox
   SANDBOX_EXEC = "/usr/bin/sandbox-exec"
-  private_constant :SANDBOX_EXEC
 
   # This is defined in the macOS SDK but Ruby unfortunately does not expose it.
   # This value can be found by compiling a C program that prints TIOCSCTTY.

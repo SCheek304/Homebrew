@@ -75,14 +75,15 @@ RSpec.shared_context "integration test" do # rubocop:disable RSpec/ContextWordin
     ].compact.join(File::PATH_SEPARATOR)
 
     env.merge!(
-      "PATH"                        => path,
-      "HOMEBREW_PATH"               => path,
-      "HOMEBREW_BREW_FILE"          => HOMEBREW_PREFIX/"bin/brew",
-      "HOMEBREW_INTEGRATION_TEST"   => command_id,
-      "HOMEBREW_TEST_TMPDIR"        => TEST_TMPDIR,
-      "HOMEBREW_DEV_CMD_RUN"        => "true",
-      "HOMEBREW_USE_RUBY_FROM_PATH" => ENV.fetch("HOMEBREW_USE_RUBY_FROM_PATH", nil),
-      "GEM_HOME"                    => nil,
+      "PATH"                         => path,
+      "HOMEBREW_PATH"                => path,
+      "HOMEBREW_BREW_FILE"           => HOMEBREW_PREFIX/"bin/brew",
+      "HOMEBREW_INTEGRATION_TEST"    => command_id,
+      "HOMEBREW_TEST_TMPDIR"         => TEST_TMPDIR,
+      "HOMEBREW_DEV_CMD_RUN"         => "true",
+      "HOMEBREW_USE_RUBY_FROM_PATH"  => ENV.fetch("HOMEBREW_USE_RUBY_FROM_PATH", nil),
+      "HOMEBREW_NO_INSTALL_FROM_API" => ENV.fetch("HOMEBREW_NO_INSTALL_FROM_API", nil),
+      "GEM_HOME"                     => nil,
     )
 
     @ruby_args ||= begin
@@ -179,6 +180,7 @@ RSpec.shared_context "integration test" do # rubocop:disable RSpec/ContextWordin
     end
 
     formula_path = Formulary.find_formula_in_tap(name.downcase, tap).tap do |path|
+      path.dirname.mkpath
       path.write <<~RUBY
         class #{Formulary.class_s(name)} < Formula
         #{content.gsub(/^(?!$)/, "  ")}
@@ -206,6 +208,7 @@ RSpec.shared_context "integration test" do # rubocop:disable RSpec/ContextWordin
   def install_test_formula(name, content = nil, build_bottle: false)
     setup_test_formula(name, content)
     fi = FormulaInstaller.new(Formula[name], build_bottle:, installed_on_request: true)
+    fi.prelude_fetch
     fi.prelude
     fi.fetch
     fi.install

@@ -7,56 +7,58 @@ module OS
   module Mac
     module Hardware
       module CPU
-        extend T::Helpers
+        module ClassMethods
+          extend T::Helpers
 
-        # These methods use info spewed out by sysctl.
-        # Look in <mach/machine.h> for decoding info.
-        def type
-          case ::Hardware::CPU.sysctl_int("hw.cputype")
-          when MachO::Headers::CPU_TYPE_I386
-            :intel
-          when MachO::Headers::CPU_TYPE_ARM64
-            :arm
-          else
-            :dunno
+          # These methods use info spewed out by sysctl.
+          # Look in <mach/machine.h> for decoding info.
+          def type
+            case ::Hardware::CPU.sysctl_int("hw.cputype")
+            when MachO::Headers::CPU_TYPE_I386
+              :intel
+            when MachO::Headers::CPU_TYPE_ARM64
+              :arm
+            else
+              :dunno
+            end
           end
-        end
 
-        def family
-          if ::Hardware::CPU.arm?
-            ::Hardware::CPU.arm_family
-          elsif ::Hardware::CPU.intel?
-            ::Hardware::CPU.intel_family
-          else
-            :dunno
+          def family
+            if ::Hardware::CPU.arm?
+              ::Hardware::CPU.arm_family
+            elsif ::Hardware::CPU.intel?
+              ::Hardware::CPU.intel_family
+            else
+              :dunno
+            end
           end
-        end
 
-        # True when running under an Intel-based shell via Rosetta 2 on an
-        # Apple Silicon Mac. This can be detected via seeing if there's a
-        # conflict between what `uname` reports and the underlying `sysctl` flags,
-        # since the `sysctl` flags don't change behaviour under Rosetta 2.
-        def in_rosetta2?
-          ::Hardware::CPU.sysctl_bool("sysctl.proc_translated")
-        end
+          # True when running under an Intel-based shell via Rosetta 2 on an
+          # Apple Silicon Mac. This can be detected via seeing if there's a
+          # conflict between what `uname` reports and the underlying `sysctl` flags,
+          # since the `sysctl` flags don't change behaviour under Rosetta 2.
+          def in_rosetta2?
+            ::Hardware::CPU.sysctl_bool!("sysctl.proc_translated")
+          end
 
-        def features
-          @features ||= ::Hardware::CPU.sysctl_n(
-            "machdep.cpu.features",
-            "machdep.cpu.extfeatures",
-            "machdep.cpu.leaf7_features",
-          ).split.map { |s| s.downcase.to_sym }
-        end
+          def features
+            @features ||= ::Hardware::CPU.sysctl_n(
+              "machdep.cpu.features",
+              "machdep.cpu.extfeatures",
+              "machdep.cpu.leaf7_features",
+            ).split.map { |s| s.downcase.to_sym }
+          end
 
-        def sse4?
-          ::Hardware::CPU.sysctl_bool("hw.optional.sse4_1")
+          def sse4?
+            ::Hardware::CPU.sysctl_bool!("hw.optional.sse4_1")
+          end
         end
       end
     end
   end
 end
 
-Hardware::CPU.singleton_class.prepend(OS::Mac::Hardware::CPU)
+Hardware::CPU.singleton_class.prepend(OS::Mac::Hardware::CPU::ClassMethods)
 
 module Hardware
   class CPU
@@ -66,41 +68,41 @@ module Hardware
       end
 
       def aes?
-        sysctl_bool("hw.optional.aes")
+        sysctl_bool!("hw.optional.aes")
       end
 
       def altivec?
-        sysctl_bool("hw.optional.altivec")
+        sysctl_bool!("hw.optional.altivec")
       end
 
       def avx?
-        sysctl_bool("hw.optional.avx1_0")
+        sysctl_bool!("hw.optional.avx1_0")
       end
 
       def avx2?
-        sysctl_bool("hw.optional.avx2_0")
+        sysctl_bool!("hw.optional.avx2_0")
       end
 
       def sse3?
-        sysctl_bool("hw.optional.sse3")
+        sysctl_bool!("hw.optional.sse3")
       end
 
       def ssse3?
-        sysctl_bool("hw.optional.supplementalsse3")
+        sysctl_bool!("hw.optional.supplementalsse3")
       end
 
       def sse4_2?
-        sysctl_bool("hw.optional.sse4_2")
+        sysctl_bool!("hw.optional.sse4_2")
       end
 
       # NOTE: This is more reliable than checking `uname`. `sysctl` returns
       #       the right answer even when running in Rosetta 2.
       def physical_cpu_arm64?
-        sysctl_bool("hw.optional.arm64")
+        sysctl_bool!("hw.optional.arm64")
       end
 
       def virtualized?
-        sysctl_bool("kern.hv_vmm_present")
+        sysctl_bool!("kern.hv_vmm_present")
       end
 
       def arm_family
@@ -171,7 +173,7 @@ module Hardware
         end
       end
 
-      def sysctl_bool(key)
+      def sysctl_bool!(key)
         sysctl_int(key) == 1
       end
 

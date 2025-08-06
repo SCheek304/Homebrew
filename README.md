@@ -1,6 +1,7 @@
 # Homebrew
 
 [![GitHub release](https://img.shields.io/github/release/Homebrew/brew.svg)](https://github.com/Homebrew/brew/releases)
+[![License](https://img.shields.io/github/license/Homebrew/brew)](https://github.com/Homebrew/brew/blob/HEAD/LICENSE.txt)
 
 Features, usage and installation instructions are [summarised on the homepage](https://brew.sh). Terminology (e.g. the difference between a Cellar, Tap, Cask and so forth) is [explained here](https://docs.brew.sh/Formula-Cookbook#homebrew-terminology).
 
@@ -33,6 +34,7 @@ For questions about donations, including corporate giving, please email the Home
 
 - [Homebrew/discussions (forum)](https://github.com/orgs/Homebrew/discussions)
 - [@homebrew@fosstodon.org (Mastodon)](https://fosstodon.org/@homebrew)
+- [@brew.sh (Bluesky)](https://bsky.app/profile/brew.sh)
 - [@MacHomebrew (𝕏 (formerly known as Twitter))](https://x.com/MacHomebrew)
 
 ## Contributing
@@ -57,7 +59,7 @@ Homebrew's [Project Leader](https://docs.brew.sh/Homebrew-Governance#6-project-l
 
 Homebrew's [Project Leadership Committee](https://docs.brew.sh/Homebrew-Governance#4-project-leadership-committee) is [Colin Dean](https://github.com/colindean), [Michka Popoff](https://github.com/iMichka), [Mike McQuaid](https://github.com/MikeMcQuaid), [Patrick Linnane](https://github.com/p-linnane) and [Vanessa Gennarelli](https://github.com/mozzadrella).
 
-Homebrew's [Technical Steering Committee](https://docs.brew.sh/Homebrew-Governance#7-technical-steering-committee) is [Bo Anderson](https://github.com/Bo98), [FX Coudert](https://github.com/fxcoudert), [Mike McQuaid](https://github.com/MikeMcQuaid) and [Rylan Polster](https://github.com/Rylan12).
+Homebrew's [Technical Steering Committee](https://docs.brew.sh/Homebrew-Governance#7-technical-steering-committee) is [Bo Anderson](https://github.com/Bo98), [Issy Long](https://github.com/issyl0), [Michael Cho](https://github.com/cho-m), [Mike McQuaid](https://github.com/MikeMcQuaid) and [Ruoyu Zhong](https://github.com/ZhongRuoyu).
 
 Homebrew's maintainers are [Alexander Bayandin](https://github.com/bayandin), [Bevan Kay](https://github.com/bevanjkay), [Bo Anderson](https://github.com/Bo98), [Branch Vincent](https://github.com/branchvincent), [Caleb Xu](https://github.com/alebcay), [Carlo Cabrera](https://github.com/carlocab), [Daeho Ro](https://github.com/daeho-ro), [Douglas Eichelberger](https://github.com/dduugg), [Dustin Rodrigues](https://github.com/dtrodrigues), [Eric Knibbe](https://github.com/EricFromCanada), [FX Coudert](https://github.com/fxcoudert), [Issy Long](https://github.com/issyl0), [Justin Krehel](https://github.com/krehel), [Klaus Hipp](https://github.com/khipp), [Markus Reiter](https://github.com/reitermarkus), [Michael Cho](https://github.com/cho-m), [Michka Popoff](https://github.com/iMichka), [Mike McQuaid](https://github.com/MikeMcQuaid), [Nanda H Krishna](https://github.com/nandahkrishna), [Patrick Linnane](https://github.com/p-linnane), [Rui Chen](https://github.com/chenrui333), [Ruoyu Zhong](https://github.com/ZhongRuoyu), [Rylan Polster](https://github.com/Rylan12), [Sam Ford](https://github.com/samford), [Sean Molenaar](https://github.com/SMillerDev), [Štefan Baebler](https://github.com/stefanb), [Thierry Moisan](https://github.com/Moisan), [Timothy Sutton](https://github.com/timsutton) and [William Woodruff](https://github.com/woodruffw).
 
@@ -83,6 +85,6 @@ Secure password storage and syncing is provided by [1Password for Teams](https:/
 [![DNSimple](https://cdn.dnsimple.com/assets/resolving-with-us/logo-light.png)](https://dnsimple.com/resolving/homebrew#gh-light-mode-only)
 [![DNSimple](https://cdn.dnsimple.com/assets/resolving-with-us/logo-dark.png)](https://dnsimple.com/resolving/homebrew#gh-dark-mode-only)
 
-Homebrew is generously supported by [GitHub](https://github.com/github), [Custom Ink](https://github.com/customink), [Randy Reddig](https://github.com/ydnar), [Henok Mikre](https://github.com/henokmikre), [Codecademy](https://github.com/Codecademy), [MacPaw Inc.](https://github.com/MacPaw), [mikadelbert](https://github.com/mikadelbert), [Workbrew](https://github.com/Workbrew) and many other users and organisations via [GitHub Sponsors](https://github.com/sponsors/Homebrew).
+Homebrew is generously supported by [GitHub](https://github.com/github), [Custom Ink](https://github.com/customink), [Randy Reddig](https://github.com/ydnar), [Codecademy](https://github.com/Codecademy), [Workbrew](https://github.com/Workbrew) and many other users and organisations via [GitHub Sponsors](https://github.com/sponsors/Homebrew).
 
 [![GitHub](https://github.com/github.png?size=64)](https://github.com/github)

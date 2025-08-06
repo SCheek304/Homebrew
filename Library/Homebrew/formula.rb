@@ -1,6 +1,7 @@
 # typed: strict
 # frozen_string_literal: true
 
+require "autobump_constants"
 require "cache_store"
 require "did_you_mean"
 require "formula_support"
@@ -31,14 +32,15 @@ require "migrator"
 require "linkage_checker"
 require "extend/ENV"
 require "language/java"
+require "language/php"
 require "language/python"
 require "tab"
 require "mktemp"
 require "find"
 require "utils/spdx"
-require "extend/on_system"
+require "on_system"
 require "api"
-require "extend/api_hashable"
+require "api_hashable"
 
 # A formula provides instructions and metadata for Homebrew to install a piece
 # of software. Every Homebrew formula is a {Formula}.
@@ -159,12 +161,12 @@ class Formula
   protected :active_spec
 
   # A symbol to indicate currently active {SoftwareSpec}.
-  # It's either :stable or :head
+  # It's either `:stable` or `:head`.
   # @see #active_spec
   sig { returns(Symbol) }
   attr_reader :active_spec_sym
 
-  # most recent modified time for source files
+  # The most recent modified time for source files.
   sig { returns(T.nilable(Time)) }
   attr_reader :source_modified_time
 
@@ -202,7 +204,7 @@ class Formula
   # The {BuildOptions} or {Tab} for this {Formula}. Lists the arguments passed
   # and any {.option}s in the {Formula}. Note that these may differ at
   # different times during the installation of a {Formula}. This is annoying
-  # but the result of state that we're trying to eliminate.
+  # but is the result of state that we're trying to eliminate.
   sig { returns(T.any(BuildOptions, Tab)) }
   attr_reader :build
 
@@ -240,6 +242,9 @@ class Formula
     @version_scheme = T.let(self.class.version_scheme || 0, Integer)
     @head = T.let(nil, T.nilable(SoftwareSpec))
     @stable = T.let(nil, T.nilable(SoftwareSpec))
+
+    @autobump = T.let(true, T::Boolean)
+    @no_autobump_message = T.let(nil, T.nilable(T.any(String, Symbol)))
 
     @force_bottle = T.let(force_bottle, T::Boolean)
 
@@ -295,6 +300,44 @@ class Formula
 
     Dependency.clear_cache
     Requirement.clear_cache
+  end
+
+  # Ensure the given formula is installed.
+  # This is useful for installing a utility formula (e.g. `shellcheck` for `brew style`).
+  sig {
+    params(
+      reason:           String,
+      latest:           T::Boolean,
+      output_to_stderr: T::Boolean,
+      quiet:            T::Boolean,
+    ).returns(T.self_type)
+  }
+  def ensure_installed!(reason: "", latest: false, output_to_stderr: true, quiet: false)
+    if output_to_stderr || quiet
+      file = if quiet
+        File::NULL
+      else
+        $stderr
+      end
+      # Call this method itself with redirected stdout
+      redirect_stdout(file) do
+        return ensure_installed!(latest:, reason:, output_to_stderr: false)
+      end
+    end
+
+    reason = " for #{reason}" if reason.present?
+
+    unless any_version_installed?
+      ohai "Installing `#{name}`#{reason}..."
+      safe_system HOMEBREW_BREW_FILE, "install", "--formula", full_name
+    end
+
+    if latest && !latest_version_installed?
+      ohai "Upgrading `#{name}`#{reason}..."
+      safe_system HOMEBREW_BREW_FILE, "upgrade", "--formula", full_name
+    end
+
+    self
   end
 
   private
@@ -431,13 +474,13 @@ class Formula
     :downloader,
   ] => :active_spec
 
-  # The Bottle object for the currently active {SoftwareSpec}.
+  # The {Bottle} object for the currently active {SoftwareSpec}.
   sig { returns(T.nilable(Bottle)) }
   def bottle
     @bottle ||= T.let(Bottle.new(self, bottle_specification), T.nilable(Bottle)) if bottled?
   end
 
-  # The Bottle object for given tag.
+  # The {Bottle} object for given tag.
   sig { params(tag: T.nilable(Utils::Bottles::Tag)).returns(T.nilable(Bottle)) }
   def bottle_for_tag(tag = nil)
     Bottle.new(self, bottle_specification, tag) if bottled?(tag)
@@ -458,20 +501,37 @@ class Formula
   # @see .homepage
   delegate homepage: :"self.class"
 
-  # The livecheck specification for the software.
+  # The `livecheck` specification for the software.
   # @!method livecheck
   # @see .livecheck
   delegate livecheck: :"self.class"
 
-  # Is a livecheck specification defined for the software?
+  # Is a `livecheck` specification defined for the software?
   # @!method livecheck_defined?
   # @see .livecheck_defined?
   delegate livecheck_defined?: :"self.class"
 
-  # Is a livecheck specification defined for the software?
+  # This is a legacy alias for `#livecheck_defined?`.
   # @!method livecheckable?
   # @see .livecheckable?
   delegate livecheckable?: :"self.class"
+
+  # Exclude the formula from the autobump list.
+  # @!method no_autobump!
+  # @see .no_autobump!
+  delegate no_autobump!: :"self.class"
+
+  # Is the formula in the autobump list?
+  # @!method autobump?
+  # @see .autobump?
+  delegate autobump?: :"self.class"
+
+  # Is a `no_autobump!` method defined?
+  # @!method no_autobump_defined?
+  # @see .no_autobump_defined?
+  delegate no_autobump_defined?: :"self.class"
+
+  delegate no_autobump_message: :"self.class"
 
   # Is a service specification defined for the software?
   # @!method service?
@@ -492,7 +552,7 @@ class Formula
     :network_access_allowed?,
   ] => :"self.class"
 
-  # Whether this formula was loaded using the formulae.brew.sh API
+  # Whether this formula was loaded using the formulae.brew.sh API.
   # @!method loaded_from_api?
   # @see .loaded_from_api?
   delegate loaded_from_api?: :"self.class"
@@ -524,7 +584,7 @@ class Formula
   sig { returns(T::Boolean) }
   def versioned_formula? = name.include?("@")
 
-  # Returns any other `@`-versioned formulae names for any formula (including versioned formulae).
+  # Returns any other `@`-versioned formulae names for any Formula (including versioned formulae).
   sig { returns(T::Array[String]) }
   def versioned_formulae_names
     versioned_names = if tap
@@ -625,7 +685,7 @@ class Formula
   # @api internal
   delegate deps: :active_spec
 
-  # The declared {Dependency}s for the currently active {SoftwareSpec} (i.e. including those provided by macOS)
+  # The declared {Dependency}s for the currently active {SoftwareSpec} (i.e. including those provided by macOS).
   delegate declared_deps: :active_spec
 
   # The {Requirement}s for the currently active {SoftwareSpec}.
@@ -708,7 +768,9 @@ class Formula
     tab = Tab.for_keg(prefix(version))
 
     return true if tab.version_scheme < version_scheme
-    return true if stable && tab.stable_version && tab.stable_version < T.must(stable).version
+
+    tab_stable_version = tab.stable_version
+    return true if stable && tab_stable_version && tab_stable_version < T.must(stable).version
     return false unless fetch_head
     return false unless head&.downloader.is_a?(VCSDownloadStrategy)
 
@@ -719,7 +781,7 @@ class Formula
     end
   end
 
-  # The latest prefix for this formula. Checks for {#head} and then {#stable}'s {#prefix}
+  # The latest prefix for this formula. Checks for {#head} and then {#stable}'s {#prefix}.
   sig { returns(Pathname) }
   def latest_installed_prefix
     if head && (head_version = latest_head_version) && !head_version_outdated?(head_version)
@@ -731,10 +793,10 @@ class Formula
     end
   end
 
-  # The directory in the cellar that the formula is installed to.
+  # The directory in the Cellar that the formula is installed to.
   # This directory points to {#opt_prefix} if it exists and if {#prefix} is not
   # called from within the same formula's {#install} or {#post_install} methods.
-  # Otherwise, return the full path to the formula's versioned cellar.
+  # Otherwise, return the full path to the formula's keg (versioned Cellar path).
   sig { params(version: T.any(String, PkgVersion)).returns(Pathname) }
   def prefix(version = pkg_version)
     versioned_prefix = versioned_prefix(version)
@@ -773,7 +835,7 @@ class Formula
     Keg.for(linked_keg).version
   end
 
-  # The parent of the prefix; the named directory in the cellar containing all
+  # The parent of the prefix; the named directory in the Cellar containing all
   # installed versions of this software.
   sig { returns(Pathname) }
   def rack = HOMEBREW_CELLAR/name
@@ -1073,8 +1135,8 @@ class Formula
   sig { returns(Pathname) }
   def etc = (HOMEBREW_PREFIX/"etc").extend(InstallRenamed)
 
-  # A subdirectory of `etc` with the formula name suffixed.
-  # e.g. `$HOMEBREW_PREFIX/etc/openssl@1.1`
+  # A subdirectory of `etc` with the formula name suffixed,
+  # e.g. `$HOMEBREW_PREFIX/etc/openssl@1.1`.
   # Anything using `pkgetc.install` will not overwrite other files on
   # e.g. upgrades but will write a new file named `*.default`.
   #
@@ -1090,7 +1152,7 @@ class Formula
   sig { returns(Pathname) }
   def var = HOMEBREW_PREFIX/"var"
 
-  # The directory where the formula's zsh function files should be
+  # The directory where the formula's `zsh` function files should be
   # installed.
   # This is symlinked into `HOMEBREW_PREFIX` after installation or with
   # `brew link` for formulae that are not keg-only.
@@ -1099,7 +1161,7 @@ class Formula
   sig { returns(Pathname) }
   def zsh_function = share/"zsh/site-functions"
 
-  # The directory where the formula's fish function files should be
+  # The directory where the formula's `fish` function files should be
   # installed.
   # This is symlinked into `HOMEBREW_PREFIX` after installation or with
   # `brew link` for formulae that are not keg-only.
@@ -1108,7 +1170,7 @@ class Formula
   sig { returns(Pathname) }
   def fish_function = share/"fish/vendor_functions.d"
 
-  # The directory where the formula's Bash completion files should be
+  # The directory where the formula's `bash` completion files should be
   # installed.
   # This is symlinked into `HOMEBREW_PREFIX` after installation or with
   # `brew link` for formulae that are not keg-only.
@@ -1117,7 +1179,7 @@ class Formula
   sig { returns(Pathname) }
   def bash_completion = prefix/"etc/bash_completion.d"
 
-  # The directory where the formula's zsh completion files should be
+  # The directory where the formula's `zsh` completion files should be
   # installed.
   # This is symlinked into `HOMEBREW_PREFIX` after installation or with
   # `brew link` for formulae that are not keg-only.
@@ -1126,7 +1188,7 @@ class Formula
   sig { returns(Pathname) }
   def zsh_completion = share/"zsh/site-functions"
 
-  # The directory where the formula's fish completion files should be
+  # The directory where the formula's `fish` completion files should be
   # installed.
   # This is symlinked into `HOMEBREW_PREFIX` after installation or with
   # `brew link` for formulae that are not keg-only.
@@ -1135,7 +1197,7 @@ class Formula
   sig { returns(Pathname) }
   def fish_completion = share/"fish/vendor_completions.d"
 
-  # The directory where formula's powershell completion files should be
+  # The directory where the formula's PowerShell completion files should be
   # installed.
   # This is symlinked into `HOMEBREW_PREFIX` after installation or with
   # `brew link` for formulae that are not keg-only.
@@ -1172,44 +1234,6 @@ class Formula
     @active_log_type = old_log_type
   end
 
-  # This method can be overridden to provide a plist.
-  #
-  # ### Example
-  #
-  # ```ruby
-  # def plist; <<~EOS
-  #   <?xml version="1.0" encoding="UTF-8"?>
-  #   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-  #   <plist version="1.0">
-  #   <dict>
-  #     <key>Label</key>
-  #       <string>#{plist_name}</string>
-  #     <key>ProgramArguments</key>
-  #     <array>
-  #       <string>#{opt_bin}/example</string>
-  #       <string>--do-this</string>
-  #     </array>
-  #     <key>RunAtLoad</key>
-  #     <true/>
-  #     <key>KeepAlive</key>
-  #     <true/>
-  #     <key>StandardErrorPath</key>
-  #     <string>/dev/null</string>
-  #     <key>StandardOutPath</key>
-  #     <string>/dev/null</string>
-  #   </dict>
-  #   </plist>
-  #   EOS
-  # end
-  # ```
-  #
-  # @see https://www.unix.com/man-page/all/5/plist/ <code>plist(5)</code> man page
-  sig { returns(NilClass) }
-  def plist
-    odisabled "`Formula#plist`", "`Homebrew::Service`"
-    nil
-  end
-
   # The generated launchd {.plist} service name.
   sig { returns(String) }
   def plist_name = service.plist_name
@@ -1220,17 +1244,17 @@ class Formula
 
   # The generated launchd {.service} file path.
   sig { returns(Pathname) }
-  def launchd_service_path = opt_prefix/"#{plist_name}.plist"
+  def launchd_service_path = (any_installed_prefix || opt_prefix)/"#{plist_name}.plist"
 
   # The generated systemd {.service} file path.
   sig { returns(Pathname) }
-  def systemd_service_path = opt_prefix/"#{service_name}.service"
+  def systemd_service_path = (any_installed_prefix || opt_prefix)/"#{service_name}.service"
 
   # The generated systemd {.timer} file path.
   sig { returns(Pathname) }
-  def systemd_timer_path = opt_prefix/"#{service_name}.timer"
+  def systemd_timer_path = (any_installed_prefix || opt_prefix)/"#{service_name}.timer"
 
-  # The service specification of the software.
+  # The service specification for the software.
   sig { returns(Homebrew::Service) }
   def service
     @service ||= T.let(Homebrew::Service.new(self, &self.class.service), T.nilable(Homebrew::Service))
@@ -1334,6 +1358,7 @@ class Formula
       path = Pathname.new(path)
       path.extend(InstallRenamed)
       path.cp_path_sub(bottle_prefix, HOMEBREW_PREFIX)
+      path
     end
   end
 
@@ -1389,7 +1414,7 @@ class Formula
   #     called or when brewing a formula.
   #     This is optional. You can use all the vars like #{version} here.
   #   EOS
-  #   s += "Some issue only on older systems" if MacOS.version < :el_capitan
+  #   s += "Some issue only on older systems" if MacOS.version < :monterey
   #   s
   # end
   # ```
@@ -1476,12 +1501,19 @@ class Formula
   # @see .deprecate!
   delegate deprecation_reason: :"self.class"
 
-  # The replacement for this deprecated {Formula}.
+  # The replacement formula for this deprecated {Formula}.
   # Returns `nil` if no replacement is specified or the formula is not deprecated.
-  # @!method deprecation_replacement
+  # @!method deprecation_replacement_formula
   # @return [String]
   # @see .deprecate!
-  delegate deprecation_replacement: :"self.class"
+  delegate deprecation_replacement_formula: :"self.class"
+
+  # The replacement cask for this deprecated {Formula}.
+  # Returns `nil` if no replacement is specified or the formula is not deprecated.
+  # @!method deprecation_replacement_cask
+  # @return [String]
+  # @see .deprecate!
+  delegate deprecation_replacement_cask: :"self.class"
 
   # Whether this {Formula} is disabled (i.e. cannot be installed).
   # Defaults to false.
@@ -1504,12 +1536,19 @@ class Formula
   # @see .disable!
   delegate disable_reason: :"self.class"
 
-  # The replacement for this disabled {Formula}.
+  # The replacement formula for this disabled {Formula}.
   # Returns `nil` if no replacement is specified or the formula is not disabled.
-  # @!method disable_replacement
+  # @!method disable_replacement_formula
   # @return [String]
   # @see .disable!
-  delegate disable_replacement: :"self.class"
+  delegate disable_replacement_formula: :"self.class"
+
+  # The replacement cask for this disabled {Formula}.
+  # Returns `nil` if no replacement is specified or the formula is not disabled.
+  # @!method disable_replacement_cask
+  # @return [String]
+  # @see .disable!
+  delegate disable_replacement_cask: :"self.class"
 
   sig { returns(T::Boolean) }
   def skip_cxxstdlib_check? = false
@@ -1539,7 +1578,7 @@ class Formula
     patches.each(&:apply)
   end
 
-  # Yields |self,staging| with current working directory set to the uncompressed tarball
+  # Yields `|self,staging|` with current working directory set to the uncompressed tarball
   # where staging is a {Mktemp} staging context.
   sig(:final) {
     params(fetch: T::Boolean, keep_tmp: T::Boolean, debug_symbols: T::Boolean, interactive: T::Boolean,
@@ -1711,7 +1750,7 @@ class Formula
 
   def_delegators :@pin, :pinnable?, :pinned_version, :pin, :unpin
 
-  # !attr[r] pinned?
+  # @!attribute [r] pinned?
   # @api internal
   delegate pinned?: :@pin
 
@@ -1747,7 +1786,7 @@ class Formula
     "#<Formula #{name} (#{active_spec_sym}) #{path}>"
   end
 
-  # Standard parameters for cabal-v2 builds.
+  # Standard parameters for Cabal-v2 builds.
   #
   # @api public
   sig { returns(T::Array[String]) }
@@ -1761,7 +1800,7 @@ class Formula
     ["--jobs=#{ENV.make_jobs}", "--max-backjumps=100000", "--install-method=copy", "--installdir=#{bin}"]
   end
 
-  # Standard parameters for cargo builds.
+  # Standard parameters for Cargo builds.
   #
   # @api public
   sig {
@@ -1820,16 +1859,18 @@ class Formula
       output:  T.any(String, Pathname),
       ldflags: T.nilable(T.any(String, T::Array[String])),
       gcflags: T.nilable(T.any(String, T::Array[String])),
+      tags:    T.nilable(T.any(String, T::Array[String])),
     ).returns(T::Array[String])
   }
-  def std_go_args(output: bin/name, ldflags: nil, gcflags: nil)
+  def std_go_args(output: bin/name, ldflags: nil, gcflags: nil, tags: nil)
     args = ["-trimpath", "-o=#{output}"]
+    args += ["-tags=#{Array(tags).join(" ")}"] if tags
     args += ["-ldflags=#{Array(ldflags).join(" ")}"] if ldflags
     args += ["-gcflags=#{Array(gcflags).join(" ")}"] if gcflags
     args
   end
 
-  # Standard parameters for meson builds.
+  # Standard parameters for Meson builds.
   #
   # @api public
   sig { returns(T::Array[String]) }
@@ -1863,10 +1904,10 @@ class Formula
     args
   end
 
-  # Standard parameters for zig builds.
+  # Standard parameters for Zig builds.
   #
-  # `release_mode` can be set to either `:safe`, `:fast`, or `:small`
-  # with `:fast` being the default value
+  # `release_mode` can be set to either `:safe`, `:fast` or `:small`,
+  # with `:fast` being the default value.
   #
   # @api public
   sig {
@@ -1932,7 +1973,7 @@ class Formula
   sig { params(source: Pathname, target: Pathname).returns(String) }
   def rpath(source: bin, target: lib)
     unless target.to_s.start_with?(HOMEBREW_PREFIX)
-      raise "rpath `target` should only be used for paths inside HOMEBREW_PREFIX!"
+      raise "rpath `target` should only be used for paths inside `$HOMEBREW_PREFIX`!"
     end
 
     "#{loader_path}/#{target.relative_path_from(source)}"
@@ -2126,7 +2167,7 @@ class Formula
       bash: bash_completion/base_name,
       zsh:  zsh_completion/"_#{base_name}",
       fish: fish_completion/"#{base_name}.fish",
-      pwsh: pwsh_completion/"#{base_name}.ps1",
+      pwsh: pwsh_completion/"_#{base_name}.ps1",
     }
 
     shells.each do |shell|
@@ -2166,25 +2207,25 @@ class Formula
     end
   end
 
-  # an array of all core {Formula} names
+  # An array of all core {Formula} names.
   sig { returns(T::Array[String]) }
   def self.core_names
     CoreTap.instance.formula_names
   end
 
-  # an array of all tap {Formula} names
+  # An array of all tap {Formula} names.
   sig { returns(T::Array[String]) }
   def self.tap_names
     @tap_names ||= T.let(Tap.reject(&:core_tap?).flat_map(&:formula_names).sort, T.nilable(T::Array[String]))
   end
 
-  # an array of all tap {Formula} files
+  # An array of all tap {Formula} files.
   sig { returns(T::Array[Pathname]) }
   def self.tap_files
     @tap_files ||= T.let(Tap.reject(&:core_tap?).flat_map(&:formula_files), T.nilable(T::Array[Pathname]))
   end
 
-  # an array of all {Formula} names
+  # An array of all {Formula} names.
   sig { returns(T::Array[String]) }
   def self.names
     @names ||= T.let((core_names + tap_names.map do |name|
@@ -2192,18 +2233,18 @@ class Formula
     end).uniq.sort, T.nilable(T::Array[String]))
   end
 
-  # an array of all {Formula} names, which the tap formulae have the fully-qualified name
+  # An array of all {Formula} names, which the tap formulae have as the fully-qualified name.
   sig { returns(T::Array[String]) }
   def self.full_names
     @full_names ||= T.let(core_names + tap_names, T.nilable(T::Array[String]))
   end
 
-  # an array of all {Formula}
-  # this should only be used when users specify `--all` to a command
+  # An array of each known {Formula}.
+  # Can only be used when users specify `--eval-all` with a command or set `HOMEBREW_EVAL_ALL=1`.
   sig { params(eval_all: T::Boolean).returns(T::Array[Formula]) }
   def self.all(eval_all: false)
     if !eval_all && !Homebrew::EnvConfig.eval_all?
-      raise ArgumentError, "Formula#all without `--eval-all` or HOMEBREW_EVAL_ALL"
+      raise ArgumentError, "Formula#all cannot be used without `--eval-all` or `HOMEBREW_EVAL_ALL=1`"
     end
 
     (core_names + tap_files).filter_map do |name_or_file|
@@ -2235,7 +2276,7 @@ class Formula
     racks.map { |rack| rack.basename.to_s }
   end
 
-  # An array of all installed {Formula}
+  # An array of all installed {Formula}e.
   sig { returns(T::Array[Formula]) }
   def self.installed
     Formula.cache[:installed] ||= racks.flat_map do |rack|
@@ -2252,25 +2293,25 @@ class Formula
     installed.select { |f| f.installed_alias_path == alias_path }
   end
 
-  # an array of all alias files of core {Formula}
+  # An array of all alias files of core {Formula}e.
   sig { returns(T::Array[Pathname]) }
   def self.core_alias_files
     CoreTap.instance.alias_files
   end
 
-  # an array of all core aliases
+  # An array of all core aliases.
   sig { returns(T::Array[String]) }
   def self.core_aliases
     CoreTap.instance.aliases
   end
 
-  # an array of all tap aliases
+  # An array of all tap aliases.
   sig { returns(T::Array[String]) }
   def self.tap_aliases
     @tap_aliases ||= T.let(Tap.reject(&:core_tap?).flat_map(&:aliases).sort, T.nilable(T::Array[String]))
   end
 
-  # an array of all aliases
+  # An array of all aliases.
   sig { returns(T::Array[String]) }
   def self.aliases
     @aliases ||= T.let((core_aliases + tap_aliases.map do |name|
@@ -2278,13 +2319,13 @@ class Formula
     end).uniq.sort, T.nilable(T::Array[String]))
   end
 
-  # an array of all aliases as fully-qualified names
+  # An array of all aliases as fully-qualified names.
   sig { returns(T::Array[String]) }
   def self.alias_full_names
     @alias_full_names ||= T.let(core_aliases + tap_aliases, T.nilable(T::Array[String]))
   end
 
-  # Returns a list of approximately matching formula names, but not the complete match
+  # Returns a list of approximately matching formula names, but not the complete match.
   sig { params(name: String).returns(T::Array[String]) }
   def self.fuzzy_search(name)
     @spell_checker ||= T.let(DidYouMean::SpellChecker.new(dictionary: Set.new(names + full_names).to_a),
@@ -2297,13 +2338,13 @@ class Formula
     Formulary.factory(name)
   end
 
-  # True if this formula is provided by Homebrew itself
+  # True if this formula is provided by Homebrew itself.
   sig { returns(T::Boolean) }
   def core_formula?
     !!tap&.core_tap?
   end
 
-  # True if this formula is provided by external Tap
+  # True if this formula is provided by an external {Tap}.
   sig { returns(T::Boolean) }
   def tap?
     return false unless tap
@@ -2311,8 +2352,8 @@ class Formula
     !T.must(tap).core_tap?
   end
 
-  # True if this formula can be installed on this platform
-  # Redefined in extend/os.
+  # True if this formula can be installed on this platform.
+  # Redefined in `extend/os`.
   sig { returns(T::Boolean) }
   def valid_platform?
     requirements.none?(MacOSRequirement) && requirements.none?(LinuxRequirement)
@@ -2335,13 +2376,15 @@ class Formula
 
   delegate env: :"self.class"
 
-  # !attr[r] conflicts
+  # Returns a list of {FormulaConflict} objects indicating any
+  # formulae that conflict with this one and why.
+  #
   # @api internal
   sig { returns(T::Array[FormulaConflict]) }
   def conflicts = T.must(self.class.conflicts)
 
-  # Returns a list of Dependency objects in an installable order, which
-  # means if a depends on b then b will be ordered before a in this list
+  # Returns a list of {Dependency} objects in an installable order, which
+  # means if `a` depends on `b` then `b` will be ordered before `a` in this list.
   #
   # @api internal
   sig { params(block: T.nilable(T.proc.params(arg0: Formula, arg1: Dependency).void)).returns(T::Array[Dependency]) }
@@ -2350,7 +2393,7 @@ class Formula
     Dependency.expand(self, cache_key:, &block)
   end
 
-  # The full set of Requirements for this formula's dependency tree.
+  # The full set of {Requirements} for this formula's dependency tree.
   #
   # @api internal
   sig { params(block: T.nilable(T.proc.params(arg0: Formula, arg1: Requirement).void)).returns(Requirements) }
@@ -2359,7 +2402,7 @@ class Formula
     Requirement.expand(self, cache_key:, &block)
   end
 
-  # Returns a Keg for the opt_prefix or installed_prefix if they exist.
+  # Returns a {Keg} for the `opt_prefix` or `installed_prefix` if they exist.
   # If not, return `nil`.
   sig { returns(T.nilable(Keg)) }
   def any_installed_keg
@@ -2388,7 +2431,7 @@ class Formula
     any_installed_keg&.version
   end
 
-  # Returns a list of Dependency objects that are required at runtime.
+  # Returns a list of {Dependency} objects that are required at runtime.
   #
   # @api internal
   sig { params(read_from_tab: T::Boolean, undeclared: T::Boolean).returns(T::Array[Dependency]) }
@@ -2488,57 +2531,62 @@ class Formula
   sig { returns(T::Hash[String, T.untyped]) }
   def to_hash
     hsh = {
-      "name"                     => name,
-      "full_name"                => full_name,
-      "tap"                      => tap&.name,
-      "oldnames"                 => oldnames,
-      "aliases"                  => aliases.sort,
-      "versioned_formulae"       => versioned_formulae.map(&:name),
-      "desc"                     => desc,
-      "license"                  => SPDX.license_expression_to_string(license),
-      "homepage"                 => homepage,
-      "versions"                 => {
+      "name"                            => name,
+      "full_name"                       => full_name,
+      "tap"                             => tap&.name,
+      "oldnames"                        => oldnames,
+      "aliases"                         => aliases.sort,
+      "versioned_formulae"              => versioned_formulae.map(&:name),
+      "desc"                            => desc,
+      "license"                         => SPDX.license_expression_to_string(license),
+      "homepage"                        => homepage,
+      "versions"                        => {
         "stable" => stable&.version&.to_s,
         "head"   => head&.version&.to_s,
         "bottle" => bottle_defined?,
       },
-      "urls"                     => urls_hash,
-      "revision"                 => revision,
-      "version_scheme"           => version_scheme,
-      "bottle"                   => {},
-      "pour_bottle_only_if"      => self.class.pour_bottle_only_if&.to_s,
-      "keg_only"                 => keg_only?,
-      "keg_only_reason"          => keg_only_reason&.to_hash,
-      "options"                  => [],
-      "build_dependencies"       => [],
-      "dependencies"             => [],
-      "test_dependencies"        => [],
-      "recommended_dependencies" => [],
-      "optional_dependencies"    => [],
-      "uses_from_macos"          => [],
-      "uses_from_macos_bounds"   => [],
-      "requirements"             => serialized_requirements,
-      "conflicts_with"           => conflicts.map(&:name),
-      "conflicts_with_reasons"   => conflicts.map(&:reason),
-      "link_overwrite"           => self.class.link_overwrite_paths.to_a,
-      "caveats"                  => caveats_with_placeholders,
-      "installed"                => T.let([], T::Array[T::Hash[String, T.untyped]]),
-      "linked_keg"               => linked_version&.to_s,
-      "pinned"                   => pinned?,
-      "outdated"                 => outdated?,
-      "deprecated"               => deprecated?,
-      "deprecation_date"         => deprecation_date,
-      "deprecation_reason"       => deprecation_reason,
-      "deprecation_replacement"  => deprecation_replacement,
-      "disabled"                 => disabled?,
-      "disable_date"             => disable_date,
-      "disable_reason"           => disable_reason,
-      "disable_replacement"      => disable_replacement,
-      "post_install_defined"     => post_install_defined?,
-      "service"                  => (service.to_hash if service?),
-      "tap_git_head"             => tap_git_head,
-      "ruby_source_path"         => ruby_source_path,
-      "ruby_source_checksum"     => {},
+      "urls"                            => urls_hash,
+      "revision"                        => revision,
+      "version_scheme"                  => version_scheme,
+      "autobump"                        => autobump?,
+      "no_autobump_message"             => no_autobump_message,
+      "skip_livecheck"                  => livecheck.skip?,
+      "bottle"                          => {},
+      "pour_bottle_only_if"             => self.class.pour_bottle_only_if&.to_s,
+      "keg_only"                        => keg_only?,
+      "keg_only_reason"                 => keg_only_reason&.to_hash,
+      "options"                         => [],
+      "build_dependencies"              => [],
+      "dependencies"                    => [],
+      "test_dependencies"               => [],
+      "recommended_dependencies"        => [],
+      "optional_dependencies"           => [],
+      "uses_from_macos"                 => [],
+      "uses_from_macos_bounds"          => [],
+      "requirements"                    => serialized_requirements,
+      "conflicts_with"                  => conflicts.map(&:name),
+      "conflicts_with_reasons"          => conflicts.map(&:reason),
+      "link_overwrite"                  => self.class.link_overwrite_paths.to_a,
+      "caveats"                         => caveats_with_placeholders,
+      "installed"                       => T.let([], T::Array[T::Hash[String, T.untyped]]),
+      "linked_keg"                      => linked_version&.to_s,
+      "pinned"                          => pinned?,
+      "outdated"                        => outdated?,
+      "deprecated"                      => deprecated?,
+      "deprecation_date"                => deprecation_date,
+      "deprecation_reason"              => deprecation_reason,
+      "deprecation_replacement_formula" => deprecation_replacement_formula,
+      "deprecation_replacement_cask"    => deprecation_replacement_cask,
+      "disabled"                        => disabled?,
+      "disable_date"                    => disable_date,
+      "disable_reason"                  => disable_reason,
+      "disable_replacement_formula"     => disable_replacement_formula,
+      "disable_replacement_cask"        => disable_replacement_cask,
+      "post_install_defined"            => post_install_defined?,
+      "service"                         => (service.to_hash if service?),
+      "tap_git_head"                    => tap_git_head,
+      "ruby_source_path"                => ruby_source_path,
+      "ruby_source_checksum"            => {},
     }
 
     hsh["bottle"]["stable"] = bottle_hash if stable && bottle_defined?
@@ -2588,11 +2636,8 @@ class Formula
 
     if path.exist? && on_system_blocks_exist?
       formula_contents = path.read
-      OnSystem::ALL_OS_ARCH_COMBINATIONS.each do |os, arch|
-        bottle_tag = Utils::Bottles::Tag.new(system: os, arch:)
-        next unless bottle_tag.valid_combination?
-
-        Homebrew::SimulateSystem.with(os:, arch:) do
+      OnSystem::VALID_OS_ARCH_TAGS.each do |bottle_tag|
+        Homebrew::SimulateSystem.with_tag(bottle_tag) do
           variations_namespace = Formulary.class_s("Variations#{bottle_tag.to_sym.capitalize}")
           variations_formula_class = Formulary.load_formula(name, path, formula_contents, variations_namespace,
                                                             flags: self.class.build_flags, ignore_errors: true)
@@ -2792,24 +2837,6 @@ class Formula
     self.class.on_system_blocks_exist? || @on_system_blocks_exist
   end
 
-  sig {
-    params(
-      verify_download_integrity: T::Boolean,
-      timeout:                   T.nilable(T.any(Integer, Float)),
-      quiet:                     T::Boolean,
-    ).returns(Pathname)
-  }
-  def fetch(verify_download_integrity: true, timeout: nil, quiet: false)
-    odeprecated "Formula#fetch", "Resource#fetch on Formula#resource"
-    active_spec.fetch(verify_download_integrity:, timeout:, quiet:)
-  end
-
-  sig { params(filename: T.any(Pathname, String)).void }
-  def verify_download_integrity(filename)
-    odeprecated "Formula#verify_download_integrity", "Resource#verify_download_integrity on Formula#resource"
-    active_spec.verify_download_integrity(filename)
-  end
-
   sig { params(keep_tmp: T::Boolean).returns(T.untyped) }
   def run_test(keep_tmp: false)
     @prefix_returns_versioned_prefix = T.let(true, T.nilable(T::Boolean))
@@ -2905,22 +2932,15 @@ class Formula
   # @api public
   sig {
     params(
-      paths:            T.any(T::Enumerable[T.any(String, Pathname)], String, Pathname),
-      before:           T.nilable(T.any(Pathname, Regexp, String)),
-      after:            T.nilable(T.any(Pathname, String, Symbol)),
-      old_audit_result: T.nilable(T::Boolean),
-      audit_result:     T::Boolean,
-      global:           T::Boolean,
-      block:            T.nilable(T.proc.params(s: StringInreplaceExtension).void),
+      paths:        T.any(T::Enumerable[T.any(String, Pathname)], String, Pathname),
+      before:       T.nilable(T.any(Pathname, Regexp, String)),
+      after:        T.nilable(T.any(Pathname, String, Symbol)),
+      audit_result: T::Boolean,
+      global:       T::Boolean,
+      block:        T.nilable(T.proc.params(s: StringInreplaceExtension).void),
     ).void
   }
-  def inreplace(paths, before = nil, after = nil, old_audit_result = nil, audit_result: true, global: true, &block)
-    # NOTE: must check for `#nil?` and not `#blank?`, or else `old_audit_result = false` will not call `odeprecated`.
-    unless old_audit_result.nil?
-      odeprecated "inreplace(paths, before, after, #{old_audit_result})",
-                  "inreplace(paths, before, after, audit_result: #{old_audit_result})"
-      audit_result = old_audit_result
-    end
+  def inreplace(paths, before = nil, after = nil, audit_result: true, global: true, &block)
     Utils::Inreplace.inreplace(paths, before, after, audit_result:, global:, &block)
   rescue Utils::Inreplace::Error => e
     onoe e.to_s
@@ -2935,7 +2955,7 @@ class Formula
     (home/".bazelrc").write "startup --output_user_root=#{home}/_bazel"
   end
 
-  # Returns a list of Dependency objects that are declared in the formula.
+  # Returns a list of {Dependency} objects that are declared in the formula.
   sig { returns(T::Array[Dependency]) }
   def declared_runtime_dependencies
     cache_key = "Formula#declared_runtime_dependencies" unless build.any_args_or_options?
@@ -2951,7 +2971,7 @@ class Formula
     end
   end
 
-  # Returns a list of Dependency objects that are not declared in the formula
+  # Returns a list of {Dependency} objects that are not declared in the formula
   # but the formula links to.
   sig { returns(T::Array[Dependency]) }
   def undeclared_runtime_dependencies
@@ -3144,16 +3164,15 @@ class Formula
             opoo "Skipping (old) #{keg} due to it being linked" unless quiet
           elsif pinned? && keg == Keg.new(@pin.path.resolved_path)
             opoo "Skipping (old) #{keg} due to it being pinned" unless quiet
-          elsif (keepme = keg/".keepme") && keepme.exist? && keepme.readable? &&
-                (keepme_refs = keepme.readlines.map(&:strip).select { |ref| Pathname(ref).exist? }.presence)
-            opoo "Skipping #{keg} as it needed by #{keepme_refs.join(", ")}" unless quiet
+          elsif (keepme_refs = keg.keepme_refs.presence)
+            opoo "Skipping #{keg} as it is needed by #{keepme_refs.join(", ")}" unless quiet
           else
             eligible_for_cleanup << keg
           end
         end
       end
     elsif !installed_prefixes.empty? && !pinned?
-      # If the cellar only has one version installed, don't complain
+      # If the rack only has one version installed, don't complain
       # that we can't tell which one to keep. Don't complain at all if the
       # only installed version is a pinned formula.
       opoo "Skipping #{full_name}: most recent version #{pkg_version} not installed" unless quiet
@@ -3199,16 +3218,25 @@ class Formula
     end
   end
 
+  sig { params(download_queue: Homebrew::DownloadQueue).void }
+  def enqueue_resources_and_patches(download_queue:)
+    resources.each do |resource|
+      download_queue.enqueue(resource)
+      resource.patches.select(&:external?).each { |patch| download_queue.enqueue(patch.resource) }
+    end
+    patchlist.select(&:external?).each { |patch| download_queue.enqueue(patch.resource) }
+  end
+
   sig { void }
   def fetch_patches
     patchlist.select(&:external?).each(&:fetch)
   end
 
-  sig { void }
-  def fetch_bottle_tab
+  sig { params(quiet: T::Boolean).void }
+  def fetch_bottle_tab(quiet: false)
     return unless bottled?
 
-    T.must(bottle).fetch_tab
+    T.must(bottle).fetch_tab(quiet: quiet)
   end
 
   sig { returns(T::Hash[String, T.untyped]) }
@@ -3350,7 +3378,7 @@ class Formula
     sig { returns(T::Hash[Symbol, T::Boolean]) }
     def network_access_allowed = T.must(@network_access_allowed)
 
-    # Whether this formula was loaded using the formulae.brew.sh API
+    # Whether this formula was loaded using the formulae.brew.sh API.
     sig { returns(T::Boolean) }
     def loaded_from_api? = !!@loaded_from_api
 
@@ -3387,7 +3415,7 @@ class Formula
     # `:all_of` should be used when the user must use all licenses.
     # `:with` should be used to specify a valid SPDX exception.
     #
-    # Add `+` to an identifier to indicate that the formulae can be
+    # Add `+` to an identifier to indicate that the formula can be
     # licensed under later versions of the same license.
     #
     # ### Examples
@@ -3546,7 +3574,7 @@ class Formula
     # and `false` otherwise.
     sig { returns(T::Boolean) }
     def livecheckable?
-      # odeprecated "`livecheckable?`", "`livecheck_defined?`"
+      odisabled "`livecheckable?`", "`livecheck_defined?`"
       @livecheck_defined == true
     end
 
@@ -3571,7 +3599,7 @@ class Formula
     sig { returns(T.nilable(Symbol)) }
     attr_reader :pour_bottle_only_if
 
-    # If `pour_bottle?` returns `false` the user-visible reason to display for
+    # If `pour_bottle?` returns `false`: the user-visible reason to display for
     # why they cannot use the bottle.
     sig { returns(T.nilable(String)) }
     attr_accessor :pour_bottle_check_unsatisfied_reason
@@ -3631,8 +3659,9 @@ class Formula
     #
     # - `:git`, `:hg`, `:svn`, `:bzr`, `:fossil`, `:cvs`,
     # - `:curl` (normal file download, will also extract)
+    # - `:homebrew_curl` (use brewed `curl`)
     # - `:nounzip` (without extracting)
-    # - `:post` (download via an HTTP POST)
+    # - `:post` (download via an HTTP POST request)
     #
     # ### Examples
     #
@@ -3648,8 +3677,8 @@ class Formula
     # ```
     #
     # @api public
-    sig { params(val: String, specs: T::Hash[Symbol, T.any(String, Symbol)]).void }
-    def url(val, specs = {}) = stable.url(val, specs)
+    sig { params(val: String, specs: T::Hash[Symbol, T.anything]).returns(String) }
+    def url(val = T.unsafe(nil), specs = {}) = stable.url(val, specs)
 
     # The version string for the {.stable} version of the formula.
     # The version is autodetected from the URL and/or tag so only needs to be
@@ -3740,7 +3769,7 @@ class Formula
 
     # Allows adding {.depends_on} and {Patch}es just to the {.stable} {SoftwareSpec}.
     # This is required instead of using a conditional.
-    # It is preferable to also pull the {url} and {sha256= sha256} into the block if one is added.
+    # It is preferable to also pull the {url} and {sha256} into the block if one is added.
     #
     # ### Example
     #
@@ -3768,7 +3797,7 @@ class Formula
     # If called as a method this provides just the {url} for the {SoftwareSpec}.
     # If a block is provided you can also add {.depends_on} and {Patch}es just to the {.head} {SoftwareSpec}.
     # The download strategies (e.g. `:using =>`) are the same as for {url}.
-    # `master` is the default branch and doesn't need stating with a `branch:` parameter.
+    # `master` is the default branch for Git and doesn't need stating with a `branch:` parameter.
     #
     # ### Example
     #
@@ -3818,15 +3847,6 @@ class Formula
       specs.each do |spec|
         spec.resource(name, klass, &block) unless spec.resource_defined?(name)
       end
-    end
-
-    # Specify a Go resource.
-    #
-    # @api public
-    sig { params(name: String, block: T.nilable(T.proc.void)).void }
-    def go_resource(name, &block)
-      odisabled "`Formula.go_resource`", "Go modules"
-      specs.each { |spec| spec.go_resource(name, &block) }
     end
 
     # The dependencies for this formula. Use strings for the names of other
@@ -4211,6 +4231,40 @@ class Formula
       @livecheck.instance_eval(&block)
     end
 
+    # Exclude the formula from the autobump list.
+    #
+    # TODO: limit this method to the official taps only
+    #       (e.g. raise an error if `!tap.official?`)
+    #
+    # @api public
+    sig { params(because: T.any(String, Symbol)).void }
+    def no_autobump!(because:)
+      if because.is_a?(Symbol) && !NO_AUTOBUMP_REASONS_LIST.key?(because)
+        raise ArgumentError, "'because' argument should use valid symbol or a string!"
+      end
+
+      @no_autobump_defined = T.let(true, T.nilable(T::Boolean))
+      @no_autobump_message = T.let(because, T.nilable(T.any(String, Symbol)))
+      @autobump = T.let(false, T.nilable(T::Boolean))
+    end
+
+    # Is the formula in the autobump list?
+    sig { returns(T::Boolean) }
+    def autobump?
+      @autobump != false # @autobump may be `nil`
+    end
+
+    # Is a `no_autobump!` method defined?
+    sig { returns(T::Boolean) }
+    def no_autobump_defined? = @no_autobump_defined == true
+
+    # Message that explains why the formula was excluded from the autobump list.
+    # Returns `nil` if no message is specified.
+    #
+    # @see .no_autobump!
+    sig { returns(T.nilable(T.any(String, Symbol))) }
+    attr_reader :no_autobump_message
+
     # Service can be used to define services.
     # This method evaluates the DSL specified in the service block of the
     # {Formula} (if it exists) and sets the instance variables of a Service
@@ -4316,33 +4370,58 @@ class Formula
     # ```
     #
     # ```ruby
-    # deprecate! date: "2020-08-27", because: "has been replaced by foo", replacement: "foo"
+    # deprecate! date: "2020-08-27", because: "has been replaced by foo", replacement_formula: "foo"
     # ```
+    # ```ruby
+    # deprecate! date: "2020-08-27", because: "has been replaced by foo", replacement_cask: "foo"
+    # ```
+    # TODO: replace legacy `replacement` with `replacement_formula` or `replacement_cask`
     #
     # @see https://docs.brew.sh/Deprecating-Disabling-and-Removing-Formulae
     # @see DeprecateDisable::FORMULA_DEPRECATE_DISABLE_REASONS
     # @api public
-    sig { params(date: String, because: T.any(NilClass, String, Symbol), replacement: T.nilable(String)).void }
-    def deprecate!(date:, because:, replacement: nil)
+    sig {
+      params(
+        date:                String,
+        because:             T.any(NilClass, String, Symbol),
+        replacement:         T.nilable(String),
+        replacement_formula: T.nilable(String),
+        replacement_cask:    T.nilable(String),
+      ).void
+    }
+    def deprecate!(date:, because:, replacement: nil, replacement_formula: nil, replacement_cask: nil)
+      if [replacement, replacement_formula, replacement_cask].filter_map(&:presence).length > 1
+        raise ArgumentError, "more than one of replacement, replacement_formula and/or replacement_cask specified!"
+      end
+
+      if replacement
+        odeprecated(
+          "deprecate!(:replacement)",
+          "deprecate!(:replacement_formula) or deprecate!(:replacement_cask)",
+        )
+      end
+
       @deprecation_date = T.let(Date.parse(date), T.nilable(Date))
       return if T.must(@deprecation_date) > Date.today
 
       @deprecation_reason = T.let(because, T.any(NilClass, String, Symbol))
-      @deprecation_replacement = T.let(replacement, T.nilable(String))
+      @deprecation_replacement_formula = T.let(replacement_formula.presence || replacement, T.nilable(String))
+      @deprecation_replacement_cask = T.let(replacement_cask.presence || replacement, T.nilable(String))
       T.must(@deprecated = T.let(true, T.nilable(T::Boolean)))
     end
 
     # Whether this {Formula} is deprecated (i.e. warns on installation).
     # Defaults to false.
+    #
     # @see .deprecate!
     sig { returns(T::Boolean) }
     def deprecated?
       @deprecated == true
     end
 
-    # The date that this {Formula} was or becomes deprecated.
-    # Returns `nil` if no date is specified.
+    # The date of deprecation of a {Formula}.
     #
+    # @return [nil] if no date is specified.
     # @see .deprecate!
     sig { returns(T.nilable(Date)) }
     attr_reader :deprecation_date
@@ -4354,12 +4433,19 @@ class Formula
     sig { returns(T.any(NilClass, String, Symbol)) }
     attr_reader :deprecation_reason
 
-    # The replacement for a deprecated {Formula}.
+    # The replacement formula for a deprecated {Formula}.
     #
     # @return [nil] if no replacement was provided or the formula is not deprecated.
     # @see .deprecate!
     sig { returns(T.nilable(String)) }
-    attr_reader :deprecation_replacement
+    attr_reader :deprecation_replacement_formula
+
+    # The replacement cask for a deprecated {Formula}.
+    #
+    # @return [nil] if no replacement was provided or the formula is not deprecated.
+    # @see .deprecate!
+    sig { returns(T.nilable(String)) }
+    attr_reader :deprecation_replacement_cask
 
     # Disables a {Formula} (on the given date) so it cannot be
     # installed. If the date has not yet passed the formula
@@ -4376,25 +4462,50 @@ class Formula
     # ```
     #
     # ```ruby
-    # disable! date: "2020-08-27", because: "has been replaced by foo", replacement: "foo"
+    # disable! date: "2020-08-27", because: "has been replaced by foo", replacement_formula: "foo"
     # ```
+    # ```ruby
+    # disable! date: "2020-08-27", because: "has been replaced by foo", replacement_cask: "foo"
+    # ```
+    #  TODO: replace legacy `replacement` with `replacement_formula` or `replacement_cask`
     #
     # @see https://docs.brew.sh/Deprecating-Disabling-and-Removing-Formulae
     # @see DeprecateDisable::FORMULA_DEPRECATE_DISABLE_REASONS
     # @api public
-    sig { params(date: String, because: T.any(NilClass, String, Symbol), replacement: T.nilable(String)).void }
-    def disable!(date:, because:, replacement: nil)
+    sig {
+      params(
+        date:                String,
+        because:             T.any(NilClass, String, Symbol),
+        replacement:         T.nilable(String),
+        replacement_formula: T.nilable(String),
+        replacement_cask:    T.nilable(String),
+      ).void
+    }
+    def disable!(date:, because:, replacement: nil, replacement_formula: nil, replacement_cask: nil)
+      if [replacement, replacement_formula, replacement_cask].filter_map(&:presence).length > 1
+        raise ArgumentError, "more than one of replacement, replacement_formula and/or replacement_cask specified!"
+      end
+
+      if replacement
+        odeprecated(
+          "disable!(:replacement)",
+          "disable!(:replacement_formula) or deprecate!(:replacement_cask)",
+        )
+      end
+
       @disable_date = T.let(Date.parse(date), T.nilable(Date))
 
       if T.must(@disable_date) > Date.today
         @deprecation_reason = T.let(because, T.any(NilClass, String, Symbol))
-        @deprecation_replacement = T.let(replacement, T.nilable(String))
+        @deprecation_replacement_formula = T.let(replacement_formula.presence || replacement, T.nilable(String))
+        @deprecation_replacement_cask = T.let(replacement_cask.presence || replacement, T.nilable(String))
         @deprecated = T.let(true, T.nilable(T::Boolean))
         return
       end
 
       @disable_reason = T.let(because, T.nilable(T.any(String, Symbol)))
-      @disable_replacement = T.let(replacement, T.nilable(String))
+      @disable_replacement_formula = T.let(replacement_formula.presence || replacement, T.nilable(String))
+      @disable_replacement_cask = T.let(replacement_cask.presence || replacement, T.nilable(String))
       @disabled = T.let(true, T.nilable(T::Boolean))
     end
 
@@ -4421,12 +4532,19 @@ class Formula
     sig { returns(T.any(NilClass, String, Symbol)) }
     attr_reader :disable_reason
 
-    # The replacement for a disabled {Formula}.
+    # The replacement formula for a disabled {Formula}.
     # Returns `nil` if no reason was provided or the formula is not disabled.
     #
     # @see .disable!
     sig { returns(T.nilable(String)) }
-    attr_reader :disable_replacement
+    attr_reader :disable_replacement_formula
+
+    # The replacement cask for a disabled {Formula}.
+    # Returns `nil` if no reason was provided or the formula is not disabled.
+    #
+    # @see .disable!
+    sig { returns(T.nilable(String)) }
+    attr_reader :disable_replacement_cask
 
     # Permit overwriting certain files while linking.
     #

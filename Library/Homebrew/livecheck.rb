@@ -173,7 +173,7 @@ class Livecheck
       url:           T.any(String, Symbol),
       homebrew_curl: T.nilable(T::Boolean),
       post_form:     T.nilable(T::Hash[Symbol, String]),
-      post_json:     T.nilable(T::Hash[Symbol, String]),
+      post_json:     T.nilable(T::Hash[Symbol, T.anything]),
     ).returns(T.nilable(T.any(String, Symbol)))
   }
   def url(url = T.unsafe(nil), homebrew_curl: nil, post_form: nil, post_json: nil)
@@ -194,9 +194,10 @@ class Livecheck
   end
 
   delegate url_options: :@options
-  delegate version: :@package_or_resource
   delegate arch: :@package_or_resource
-  private :version, :arch
+  delegate os: :@package_or_resource
+  delegate version: :@package_or_resource
+  private :arch, :os, :version
   # Returns a `Hash` of all instance variable values.
   # @return [Hash]
   sig { returns(T::Hash[String, T.untyped]) }

@@ -238,12 +238,12 @@ module Homebrew
 
             options.delete(opt)
           end
-          args_options << "*::#{type}:#{ZSH_NAMED_ARGS_COMPLETION_FUNCTION_MAPPING[type]}"
+          args_options << "*:#{type}:#{ZSH_NAMED_ARGS_COMPLETION_FUNCTION_MAPPING[type]}"
         end
 
         if named_args_strings.any?
           args_options << "- subcommand"
-          args_options << "*::subcommand:(#{named_args_strings.join(" ")})"
+          args_options << "*:subcommand:(#{named_args_strings.join(" ")})"
         end
       end
 

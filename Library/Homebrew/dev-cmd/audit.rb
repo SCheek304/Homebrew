@@ -42,8 +42,8 @@ module Homebrew
         switch "--installed",
                description: "Only check formulae and casks that are currently installed."
         switch "--eval-all",
-               description: "Evaluate all available formulae and casks, whether installed or not, to audit them. " \
-                            "Implied if `HOMEBREW_EVAL_ALL` is set."
+               description: "Evaluate all available formulae and casks, whether installed or not, to audit them.",
+               env:         :eval_all
         switch "--new",
                description: "Run various additional style checks to determine if a new formula or cask is eligible " \
                             "for Homebrew. This should be used when creating new formulae or casks and implies " \
@@ -59,7 +59,8 @@ module Homebrew
         switch "--[no-]signing",
                description: "Audit for app signatures, which are required by macOS on ARM."
         switch "--token-conflicts",
-               description: "Audit for token conflicts."
+               description: "Audit for token conflicts.",
+               hidden:      true
         flag   "--tap=",
                description: "Check formulae and casks within the given tap, specified as <user>`/`<repo>."
         switch "--fix",
@@ -103,6 +104,8 @@ module Homebrew
 
       sig { override.void }
       def run
+        odeprecated "brew audit --token-conflicts" if args.token_conflicts?
+
         Formulary.enable_factory_cache!
 
         os_arch_combinations = args.os_arch_combinations
@@ -135,15 +138,17 @@ module Homebrew
             no_named_args = true
             [Formula.installed, Cask::Caskroom.casks]
           elsif args.no_named?
-            if !args.eval_all? && !Homebrew::EnvConfig.eval_all?
+            eval_all = args.eval_all?
+
+            unless eval_all
               # This odisabled should probably stick around indefinitely.
               odisabled "brew audit",
-                        "brew audit --eval-all or HOMEBREW_EVAL_ALL"
+                        "`brew audit --eval-all` or set `HOMEBREW_EVAL_ALL=1`"
             end
             no_named_args = true
             [
-              Formula.all(eval_all: args.eval_all?),
-              Cask::Cask.all(eval_all: args.eval_all?),
+              Formula.all(eval_all:),
+              Cask::Cask.all(eval_all:),
             ]
           else
             if args.named.any? { |named_arg| named_arg.end_with?(".rb") }
@@ -251,18 +256,17 @@ module Homebrew
                 # For switches, we add `|| nil` so that `nil` will be passed
                 # instead of `false` if they aren't set.
                 # This way, we can distinguish between "not set" and "set to false".
-                audit_online:          args.online? || nil,
-                audit_strict:          args.strict? || nil,
+                audit_online:   args.online? || nil,
+                audit_strict:   args.strict? || nil,
 
                 # No need for `|| nil` for `--[no-]signing`
                 # because boolean switches are already `nil` if not passed
-                audit_signing:         args.signing?,
-                audit_new_cask:        args.new? || nil,
-                audit_token_conflicts: args.token_conflicts? || nil,
-                quarantine:            true,
-                any_named_args:        !no_named_args,
-                only:                  args.only || [],
-                except:                args.except || [],
+                audit_signing:  args.signing?,
+                audit_new_cask: args.new? || nil,
+                quarantine:     true,
+                any_named_args: !no_named_args,
+                only:           args.only || [],
+                except:         args.except || [],
               ).to_a
             end
           end.uniq

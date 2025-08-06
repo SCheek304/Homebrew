@@ -25,9 +25,11 @@ module Homebrew
         switch "--debug",
                description: "Enable debugging using `ruby/debug`, or surface the standard `odebug` output."
         switch "--changed",
-               description: "Only runs tests on files that were changed from the master branch."
+               description: "Only runs tests on files that were changed from the `main` branch."
         switch "--fail-fast",
                description: "Exit early on the first failing test."
+        switch "--no-parallel",
+               description: "Run tests serially."
         flag   "--only=",
                description: "Run only `<test_script>_spec.rb`. Appending `:<line_number>` will start at a " \
                             "specific line."
@@ -49,7 +51,12 @@ module Homebrew
         HOMEBREW_LIBRARY_PATH.cd do
           setup_environment!
 
-          parallel = true
+          # Needs required here, after `setup_environment!`, so that
+          # `HOMEBREW_TEST_GENERIC_OS` is set and `OS.linux?` and `OS.mac?` both
+          # `return false`.
+          require "extend/os/dev-cmd/tests"
+
+          parallel = !args.no_parallel?
 
           only = args.only
           files = if only
@@ -120,25 +127,13 @@ module Homebrew
           ]
           bundle_args << "--fail-fast" if args.fail_fast?
           bundle_args << "--profile" << args.profile if args.profile
-
-          # TODO: Refactor and move to extend/os
-          # rubocop:disable Homebrew/MoveToExtendOS
-          unless OS.mac?
-            bundle_args << "--tag" << "~needs_macos" << "--tag" << "~cask"
-            files = files.grep_v(%r{^test/(os/mac|cask)(/.*|_spec\.rb)$})
-          end
-
-          unless OS.linux?
-            bundle_args << "--tag" << "~needs_linux"
-            files = files.grep_v(%r{^test/os/linux(/.*|_spec\.rb)$})
-          end
-          # rubocop:enable Homebrew/MoveToExtendOS
-
+          bundle_args << "--tag" << "~needs_arm" unless Hardware::CPU.arm?
+          bundle_args << "--tag" << "~needs_intel" unless Hardware::CPU.intel?
           bundle_args << "--tag" << "~needs_network" unless args.online?
-          unless ENV["CI"]
-            bundle_args << "--tag" << "~needs_ci" \
-                        << "--tag" << "~needs_svn"
-          end
+          bundle_args << "--tag" << "~needs_ci" unless ENV["CI"]
+
+          bundle_args = os_bundle_args(bundle_args)
+          files = os_files(files)
 
           puts "Randomized with seed #{seed}"
 
@@ -166,11 +161,46 @@ module Homebrew
 
       private
 
+      sig { params(bundle_args: T::Array[String]).returns(T::Array[String]) }
+      def os_bundle_args(bundle_args)
+        # for generic tests, remove macOS or Linux specific tests
+        non_linux_bundle_args(non_macos_bundle_args(bundle_args))
+      end
+
+      sig { params(bundle_args: T::Array[String]).returns(T::Array[String]) }
+      def non_macos_bundle_args(bundle_args)
+        bundle_args << "--tag" << "~needs_homebrew_core" if ENV["CI"]
+        bundle_args << "--tag" << "~needs_svn" unless args.online?
+
+        bundle_args << "--tag" << "~needs_macos" << "--tag" << "~cask"
+      end
+
+      sig { params(bundle_args: T::Array[String]).returns(T::Array[String]) }
+      def non_linux_bundle_args(bundle_args)
+        bundle_args << "--tag" << "~needs_linux" << "--tag" << "~needs_systemd"
+      end
+
+      sig { params(files: T::Array[String]).returns(T::Array[String]) }
+      def os_files(files)
+        # for generic tests, remove macOS or Linux specific files
+        non_linux_files(non_macos_files(files))
+      end
+
+      sig { params(files: T::Array[String]).returns(T::Array[String]) }
+      def non_macos_files(files)
+        files.grep_v(%r{^test/(os/mac|cask)(/.*|_spec\.rb)$})
+      end
+
+      sig { params(files: T::Array[String]).returns(T::Array[String]) }
+      def non_linux_files(files)
+        files.grep_v(%r{^test/os/linux(/.*|_spec\.rb)$})
+      end
+
       sig { returns(T::Array[String]) }
       def changed_test_files
-        changed_files = Utils.popen_read("git", "diff", "--name-only", "master")
+        changed_files = Utils.popen_read("git", "diff", "--name-only", "main")
 
-        raise UsageError, "No files have been changed from the master branch!" if changed_files.blank?
+        raise UsageError, "No files have been changed from the `main` branch!" if changed_files.blank?
 
         filestub_regex = %r{Library/Homebrew/([\w/-]+).rb}
         changed_files.scan(filestub_regex).map(&:last).filter_map do |filestub|
@@ -216,9 +246,6 @@ module Homebrew
         ENV["HOMEBREW_TEST_ONLINE"] = "1" if args.online?
         ENV["HOMEBREW_SORBET_RUNTIME"] = "1"
         ENV["HOMEBREW_NO_FORCE_BREW_WRAPPER"] = "1"
-
-        # TODO: remove this and fix tests when possible.
-        ENV["HOMEBREW_NO_INSTALL_FROM_API"] = "1"
 
         ENV["USER"] ||= system_command!("id", args: ["-nu"]).stdout.chomp
 

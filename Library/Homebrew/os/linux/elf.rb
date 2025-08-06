@@ -44,6 +44,19 @@ module ELFShim
 
   requires_ancestor { Pathname }
 
+  def initialize(*args)
+    @elf = T.let(nil, T.nilable(T::Boolean))
+    @arch = T.let(nil, T.nilable(Symbol))
+    @elf_type = T.let(nil, T.nilable(Symbol))
+    @rpath = T.let(nil, T.nilable(String))
+    @interpreter = T.let(nil, T.nilable(String))
+    @dynamic_elf = T.let(nil, T.nilable(T::Boolean))
+    @metadata = T.let(nil, T.nilable(Metadata))
+    @patchelf_patcher = nil
+
+    super
+  end
+
   def read_uint8(offset)
     read(1, offset).unpack1("C")
   end
@@ -52,8 +65,10 @@ module ELFShim
     read(2, offset).unpack1("v")
   end
 
+  sig { returns(T::Boolean) }
   def elf?
-    return @elf if defined? @elf
+    return @elf unless @elf.nil?
+
     return @elf = false if read(MAGIC_NUMBER_ASCII.size, MAGIC_NUMBER_OFFSET) != MAGIC_NUMBER_ASCII
 
     # Check that this ELF file is for Linux or System V.
@@ -61,6 +76,7 @@ module ELFShim
     @elf = [OS_ABI_LINUX, OS_ABI_SYSTEM_V].include? read_uint8(OS_ABI_OFFSET)
   end
 
+  sig { returns(Symbol) }
   def arch
     return :dunno unless elf?
 
@@ -84,6 +100,7 @@ module ELFShim
     wanted_arch == arch
   end
 
+  sig { returns(Symbol) }
   def elf_type
     return :dunno unless elf?
 
@@ -104,10 +121,9 @@ module ELFShim
 
   # The runtime search path, such as:
   # "/lib:/usr/lib:/usr/local/lib"
+  sig { returns(T.nilable(String)) }
   def rpath
-    return @rpath if defined? @rpath
-
-    @rpath = rpath_using_patchelf_rb
+    @rpath ||= rpath_using_patchelf_rb
   end
 
   # An array of runtime search path entries, such as:
@@ -116,10 +132,9 @@ module ELFShim
     Array(rpath&.split(":"))
   end
 
+  sig { returns(T.nilable(String)) }
   def interpreter
-    return @interpreter if defined? @interpreter
-
-    @interpreter = patchelf_patcher.interpreter
+    @interpreter ||= patchelf_patcher.interpreter
   end
 
   def patch!(interpreter: nil, rpath: nil)
@@ -128,23 +143,31 @@ module ELFShim
     save_using_patchelf_rb interpreter, rpath
   end
 
+  sig { returns(T::Boolean) }
   def dynamic_elf?
-    return @dynamic_elf if defined? @dynamic_elf
-
-    @dynamic_elf = patchelf_patcher.elf.segment_by_type(:DYNAMIC).present?
+    @dynamic_elf ||= patchelf_patcher.elf.segment_by_type(:DYNAMIC).present?
   end
 
   # Helper class for reading metadata from an ELF file.
   class Metadata
-    attr_reader :path, :dylib_id, :dylibs
+    sig { returns(ELFShim) }
+    attr_reader :path
 
+    sig { returns(T.nilable(String)) }
+    attr_reader :dylib_id
+
+    sig { returns(T::Array[String]) }
+    attr_reader :dylibs
+
+    sig { params(path: ELFShim).void }
     def initialize(path)
-      @path = path
-      @dylibs = []
+      @path = T.let(path, ELFShim)
+      @dylibs = T.let([], T::Array[String])
+      @dylib_id = T.let(nil, T.nilable(String))
       @dylib_id, needed = needed_libraries path
-      return if needed.empty?
+      @dylibs = needed.map { |lib| find_full_lib_path(lib).to_s } if needed.present?
 
-      @dylibs = needed.map { |lib| find_full_lib_path(lib).to_s }
+      @metadata = T.let(nil, T.nilable(T::Hash[String, T.untyped]))
     end
 
     private
@@ -225,6 +248,7 @@ module ELFShim
     @patchelf_patcher ||= ::PatchELF::Patcher.new to_s, on_error: :silent
   end
 
+  sig { returns(Metadata) }
   def metadata
     @metadata ||= Metadata.new(self)
   end

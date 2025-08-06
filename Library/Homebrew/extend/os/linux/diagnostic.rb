@@ -32,12 +32,12 @@ module OS
         end
 
         def check_tmpdir_sticky_bit
-          message = generic_check_tmpdir_sticky_bit
+          message = super
           return if message.nil?
 
           message + <<~EOS
             If you don't have administrative privileges on this machine,
-            create a directory and set the HOMEBREW_TEMP environment variable,
+            create a directory and set the `$HOMEBREW_TEMP` environment variable,
             for example:
               install -d -m 1755 ~/tmp
               #{Utils::Shell.set_variable_in_profile("HOMEBREW_TEMP", "~/tmp")}
@@ -53,7 +53,7 @@ module OS
 
           <<~EOS
             The directory #{HOMEBREW_TEMP} does not permit executing
-            programs. It is likely mounted as "noexec". Please set HOMEBREW_TEMP
+            programs. It is likely mounted as "noexec". Please set `$HOMEBREW_TEMP`
             in your #{Utils::Shell.profile} to a different directory, for example:
               export HOMEBREW_TEMP=~/tmp
               echo 'export HOMEBREW_TEMP=~/tmp' >> #{Utils::Shell.profile}
@@ -74,12 +74,14 @@ module OS
         end
 
         def check_supported_architecture
-          return if Hardware::CPU.arch == :x86_64
+          return if ::Hardware::CPU.intel?
+          return if Homebrew::EnvConfig.developer? && ENV["HOMEBREW_ARM64_TESTING"].present? && ::Hardware::CPU.arm?
 
           <<~EOS
-            Your CPU architecture (#{Hardware::CPU.arch}) is not supported. We only support
+            Your CPU architecture (#{::Hardware::CPU.arch}) is not supported. We only support
             x86_64 CPU architectures. You will be unable to use binary packages (bottles).
-            #{please_create_pull_requests}
+
+            #{support_tier_message(tier: 2)}
           EOS
         end
 
@@ -89,10 +91,30 @@ module OS
           <<~EOS
             Your system glibc #{OS::Linux::Glibc.system_version} is too old.
             We only support glibc #{OS::Linux::Glibc.minimum_version} or later.
-            #{please_create_pull_requests}
+
             We recommend updating to a newer version via your distribution's
             package manager, upgrading your distribution to the latest version,
             or changing distributions.
+
+            #{support_tier_message(tier: :unsupported)}
+          EOS
+        end
+
+        def check_glibc_version
+          return unless OS::Linux::Glibc.below_ci_version?
+
+          # We want to bypass this check in some tests.
+          return if ENV["HOMEBREW_GLIBC_TESTING"]
+
+          <<~EOS
+            Your system glibc #{OS::Linux::Glibc.system_version} is too old.
+            We will need to automatically install a newer version.
+
+            We recommend updating to a newer version via your distribution's
+            package manager, upgrading your distribution to the latest version,
+            or changing distributions.
+
+            #{support_tier_message(tier: 2)}
           EOS
         end
 
@@ -103,10 +125,12 @@ module OS
             Your Linux kernel #{OS.kernel_version} is too old.
             We only support kernel #{OS::Linux::Kernel.minimum_version} or later.
             You will be unable to use binary packages (bottles).
-            #{please_create_pull_requests}
+
             We recommend updating to a newer version via your distribution's
             package manager, upgrading your distribution to the latest version,
             or changing distributions.
+
+            #{support_tier_message(tier: 3)}
           EOS
         end
 
@@ -124,7 +148,7 @@ module OS
           return unless Homebrew::EnvConfig.bottle_domain.include?("linuxbrew")
 
           <<~EOS
-            Your HOMEBREW_BOTTLE_DOMAIN still contains "linuxbrew".
+            Your `$HOMEBREW_BOTTLE_DOMAIN` still contains "linuxbrew".
             You must unset it (or adjust it to not contain linuxbrew
             e.g. by using homebrew instead).
           EOS
@@ -142,7 +166,14 @@ module OS
           return if gcc_dependents.empty?
 
           badly_linked = gcc_dependents.select do |dependent|
-            keg = Keg.new(dependent.prefix)
+            dependent_prefix = dependent.any_installed_prefix
+            # Keg.new() may raise an error if it is not a directory.
+            # As the result `brew doctor` may display `Error: <keg> is not a directory`
+            # instead of proper `doctor` information.
+            # There are other checks that test that, we can skip broken kegs.
+            next if dependent_prefix.nil? || !dependent_prefix.exist? || !dependent_prefix.directory?
+
+            keg = Keg.new(dependent_prefix)
             keg.binary_executable_or_library_files.any? do |binary|
               paths = binary.rpaths
               versioned_linkage = paths.any? { |path| path.match?(%r{lib/gcc/\d+$}) }
@@ -157,6 +188,13 @@ module OS
             Formulae which link to GCC through a versioned path were found. These formulae
             are prone to breaking when GCC is updated. You should `brew reinstall` these formulae:
           EOS
+        end
+
+        def check_cask_software_versions
+          super
+          add_info "Linux", OS::Linux.os_version
+
+          nil
         end
       end
     end

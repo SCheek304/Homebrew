@@ -39,12 +39,12 @@ class PATH
     self
   end
 
-  sig { params(block: T.proc.params(arg0: String).returns(T::Boolean)).returns(T.self_type) }
+  sig { params(block: T.proc.params(arg0: String).returns(BasicObject)).returns(T.self_type) }
   def select(&block)
     self.class.new(@paths.select(&block))
   end
 
-  sig { params(block: T.proc.params(arg0: String).returns(T::Boolean)).returns(T.self_type) }
+  sig { params(block: T.proc.params(arg0: String).returns(BasicObject)).returns(T.self_type) }
   def reject(&block)
     self.class.new(@paths.reject(&block))
   end

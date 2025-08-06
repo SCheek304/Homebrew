@@ -12,7 +12,7 @@ module Cask
       end
 
       def self.uninstall_dsl_key
-        dsl_key.to_s.prepend("uninstall_").to_sym
+        :"uninstall_#{dsl_key}"
       end
 
       attr_reader :directives

@@ -15,34 +15,32 @@ module Homebrew
       MAX_REPO_COMMITS = 1000
 
       cmd_args do
-        usage_banner "`contributions` [--user=<email|username>] [<--repositories>`=`] [<--csv>]"
+        usage_banner "`contributions` [`--user=`] [`--repositories=`] [`--from=`] [`--to=`] [`--csv`]"
         description <<~EOS
           Summarise contributions to Homebrew repositories.
         EOS
-
+        comma_array "--user=",
+                    description: "Specify a comma-separated list of GitHub usernames or email addresses to find " \
+                                 "contributions from. Omitting this flag searches Homebrew maintainers."
         comma_array "--repositories",
                     description: "Specify a comma-separated list of repositories to search. " \
                                  "Supported repositories: #{SUPPORTED_REPOS.map { |t| "`#{t}`" }.to_sentence}. " \
                                  "Omitting this flag, or specifying `--repositories=primary`, searches only the " \
-                                 "main repositories: brew,core,cask. " \
-                                 "Specifying `--repositories=all`, searches all repositories. "
-        flag "--from=",
-             description: "Date (ISO-8601 format) to start searching contributions. " \
-                          "Omitting this flag searches the last year."
-
-        flag "--to=",
-             description: "Date (ISO-8601 format) to stop searching contributions."
-
-        comma_array "--user=",
-                    description: "Specify a comma-separated list of GitHub usernames or email addresses to find " \
-                                 "contributions from. Omitting this flag searches maintainers."
-
+                                 "main repositories: `brew`, `core`, `cask`. " \
+                                 "Specifying `--repositories=all` searches all repositories. "
+        flag   "--from=",
+               description: "Date (ISO 8601 format) to start searching contributions. " \
+                            "Omitting this flag searches the past year."
+        flag   "--to=",
+               description: "Date (ISO 8601 format) to stop searching contributions."
         switch "--csv",
                description: "Print a CSV of contributions across repositories over the time period."
       end
 
       sig { override.void }
       def run
+        Homebrew.install_bundler_gems!(groups: ["contributions"]) if args.csv?
+
         results = {}
         grand_totals = {}
 
@@ -70,10 +68,10 @@ module Homebrew
         users = args.user.presence || GitHub.members_by_team("Homebrew", "maintainers").keys
         users.each do |username|
           # TODO: Using the GitHub username to scan the `git log` undercounts some
-          # contributions as people might not always have configured their Git
-          # committer details to match the ones on GitHub.
+          #       contributions as people might not always have configured their Git
+          #       committer details to match the ones on GitHub.
           # TODO: Switch to using the GitHub APIs instead of `git log` if
-          # they ever support trailers.
+          #       they ever support trailers.
           results[username] = scan_repositories(repos, username, from:)
           grand_totals[username] = total(results[username])
 
@@ -86,16 +84,21 @@ module Homebrew
           contributions <<
             "#{Utils.pluralize("time", grand_totals[username].values.sum, include_count: true)} (total)"
 
-          puts [
+          contributions_string = [
             "#{username} contributed",
             *contributions.to_sentence,
             "#{time_period(from:, to: args.to)}.",
           ].join(" ")
+          if args.csv?
+            $stderr.puts contributions_string
+          else
+            puts contributions_string
+          end
         end
 
         return unless args.csv?
 
-        puts
+        $stderr.puts
         puts generate_csv(grand_totals)
       end
 
@@ -124,7 +127,7 @@ module Homebrew
 
       sig { params(totals: T::Hash[String, T::Hash[Symbol, Integer]]).returns(String) }
       def generate_csv(totals)
-        require "csv" # TODO: this will be removed from Ruby 3.4
+        require "csv"
 
         CSV.generate do |csv|
           csv << %w[user repo author committer coauthor review total]

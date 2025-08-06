@@ -18,8 +18,7 @@ module Homebrew
 
           If any version of each formula argument is installed and no other options
           are passed, this command displays their actual runtime dependencies (similar
-          to `brew linkage`), which may differ from the current versions' stated
-          dependencies if the installed versions are outdated.
+          to `brew linkage`), which may differ from a formula's declared dependencies.
 
           *Note:* `--missing` and `--skip-recommended` have precedence over `--include-*`.
         EOS
@@ -92,26 +91,50 @@ module Homebrew
         raise UsageError, "`brew deps --arch=all` is not supported" if args.arch == "all"
 
         os, arch = T.must(args.os_arch_combinations.first)
-        all = args.eval_all?
+        eval_all = args.eval_all?
 
         Formulary.enable_factory_cache!
 
         SimulateSystem.with(os:, arch:) do
-          recursive = !args.direct?
-          installed = args.installed? || dependents(args.named.to_formulae_and_casks).all?(&:any_version_installed?)
+          @use_runtime_dependencies = true
 
-          @use_runtime_dependencies = installed && recursive &&
-                                      !args.tree? &&
-                                      !args.graph? &&
-                                      !args.HEAD? &&
-                                      !args.include_implicit? &&
-                                      !args.include_build? &&
-                                      !args.include_test? &&
-                                      !args.include_optional? &&
-                                      !args.skip_recommended? &&
-                                      !args.missing? &&
-                                      args.os.nil? &&
-                                      args.arch.nil?
+          installed = args.installed? || dependents(args.named.to_formulae_and_casks).all?(&:any_version_installed?)
+          unless installed
+            not_using_runtime_dependencies_reason = if args.installed?
+              "not all the named formulae were installed"
+            else
+              "`--installed` was not passed"
+            end
+
+            @use_runtime_dependencies = false
+          end
+
+          %w[direct tree graph HEAD skip_recommended missing
+             include_implicit include_build include_test include_optional].each do |arg|
+            next unless args.public_send("#{arg}?")
+
+            not_using_runtime_dependencies_reason = "--#{arg.tr("_", "-")} was passed"
+
+            @use_runtime_dependencies = false
+          end
+
+          %w[os arch].each do |arg|
+            next if args.public_send(arg).nil?
+
+            not_using_runtime_dependencies_reason = "--#{arg.tr("_", "-")} was passed"
+
+            @use_runtime_dependencies = false
+          end
+
+          if !@use_runtime_dependencies && !Homebrew::EnvConfig.no_env_hints?
+            opoo <<~EOS
+              `brew deps` is not the actual runtime dependencies because #{not_using_runtime_dependencies_reason}!
+              This means dependencies may differ from a formula's declared dependencies.
+              Hide these hints with `HOMEBREW_NO_ENV_HINTS=1` (see `man brew`).
+            EOS
+          end
+
+          recursive = !args.direct?
 
           if args.tree? || args.graph?
             dependents = if args.named.present?
@@ -141,9 +164,9 @@ module Homebrew
 
             puts_deps_tree(dependents, recursive:)
             return
-          elsif all
+          elsif eval_all
             puts_deps(sorted_dependents(
-                        Formula.all(eval_all: args.eval_all?) + Cask::Cask.all(eval_all: args.eval_all?),
+                        Formula.all(eval_all:) + Cask::Cask.all(eval_all:),
                       ), recursive:)
             return
           elsif !args.no_named? && args.for_each?

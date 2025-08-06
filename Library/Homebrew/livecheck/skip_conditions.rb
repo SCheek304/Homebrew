@@ -120,6 +120,7 @@ module Homebrew
       }
       private_class_method def self.cask_deprecated(cask, livecheck_defined, full_name: false, verbose: false)
         return {} if !cask.deprecated? || livecheck_defined
+        return {} if cask.disable_date && cask.deprecation_reason == :unsigned
 
         Livecheck.status_hash(cask, "deprecated", full_name:, verbose:)
       end
@@ -323,7 +324,7 @@ module Homebrew
         end
         return unless name
 
-        if skip_hash[:messages].is_a?(Array) && skip_hash[:messages].count.positive?
+        if skip_hash[:messages].is_a?(Array) && skip_hash[:messages].any?
           # TODO: Handle multiple messages, only if needed in the future
           if skip_hash[:status] == "skipped"
             puts "#{Tty.red}#{name}#{Tty.reset}: skipped - #{skip_hash[:messages][0]}"

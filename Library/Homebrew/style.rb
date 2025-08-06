@@ -62,7 +62,7 @@ module Homebrew
             shell_scripts
           else
             path.glob("**/*.sh")
-                .reject { |path| path.to_s.include?("/vendor/") || path.directory? }
+                .reject { |file_path| file_path.to_s.include?("/vendor/") || file_path.directory? }
           end
           actionlint_files += (path/".github/workflows").glob("*.y{,a}ml")
         end
@@ -86,14 +86,15 @@ module Homebrew
       end
 
       shfmt_result = files.present? && shell_files.empty?
-      shfmt_result ||= run_shfmt(shell_files, fix:)
+      shfmt_result ||= run_shfmt!(shell_files, fix:)
 
+      actionlint_files = github_workflow_files if files.blank? && actionlint_files.blank?
       has_actionlint_workflow = actionlint_files.any? do |path|
         path.to_s.end_with?("/.github/workflows/actionlint.yml")
       end
       odebug "actionlint workflow detected. Skipping actionlint checks." if has_actionlint_workflow
       actionlint_result = files.present? && (has_actionlint_workflow || actionlint_files.empty?)
-      actionlint_result ||= run_actionlint(actionlint_files)
+      actionlint_result ||= run_actionlint!(actionlint_files)
 
       if output_type == :json
         Offenses.new(rubocop_result + shellcheck_result)
@@ -175,7 +176,7 @@ module Homebrew
 
         # Don't show the default formatter's progress dots
         # on CI or if only checking a single file.
-        args << "--format" << "clang" if ENV["CI"] || files.count { |f| !f.directory? } == 1
+        args << "--format" << "clang" if ENV["CI"] || files.one? { |f| !f.directory? }
 
         args << "--color" if Tty.color?
 
@@ -263,7 +264,7 @@ module Homebrew
       end
     end
 
-    def self.run_shfmt(files, fix: false)
+    def self.run_shfmt!(files, fix: false)
       files = shell_scripts if files.blank?
       # Do not format completions and Dockerfile
       files.delete(HOMEBREW_REPOSITORY/"completions/bash/brew")
@@ -276,7 +277,7 @@ module Homebrew
       $CHILD_STATUS.success?
     end
 
-    def self.run_actionlint(files)
+    def self.run_actionlint!(files)
       files = github_workflow_files if files.blank?
       # the ignore is to avoid false positives in e.g. actions, homebrew-test-bot
       system actionlint, "-shellcheck", shellcheck,
@@ -298,7 +299,7 @@ module Homebrew
 
     def self.shell_scripts
       [
-        HOMEBREW_ORIGINAL_BREW_FILE,
+        HOMEBREW_ORIGINAL_BREW_FILE.realpath,
         HOMEBREW_REPOSITORY/"completions/bash/brew",
         HOMEBREW_REPOSITORY/"Dockerfile",
         *HOMEBREW_REPOSITORY.glob(".devcontainer/**/*.sh"),
@@ -319,25 +320,20 @@ module Homebrew
       HOMEBREW_REPOSITORY.glob(".github/workflows/*.yml")
     end
 
-    def self.rubocop
-      ensure_formula_installed!("rubocop", latest: true,
-                                           reason: "Ruby style checks").opt_bin/"rubocop"
-    end
-
     def self.shellcheck
-      ensure_formula_installed!("shellcheck", latest: true,
-                                              reason: "shell style checks").opt_bin/"shellcheck"
+      require "formula"
+      Formula["shellcheck"].ensure_installed!(latest: true, reason: "shell style checks").opt_bin/"shellcheck"
     end
 
     def self.shfmt
-      ensure_formula_installed!("shfmt", latest: true,
-                                         reason: "formatting shell scripts")
+      require "formula"
+      Formula["shfmt"].ensure_installed!(latest: true, reason: "formatting shell scripts")
       HOMEBREW_LIBRARY/"Homebrew/utils/shfmt.sh"
     end
 
     def self.actionlint
-      ensure_formula_installed!("actionlint", latest: true,
-                                              reason: "GitHub Actions checks").opt_bin/"actionlint"
+      require "formula"
+      Formula["actionlint"].ensure_installed!(latest: true, reason: "GitHub Actions checks").opt_bin/"actionlint"
     end
 
     # Collection of style offenses.

@@ -13,7 +13,6 @@ require "sandbox"
 require "development_tools"
 require "cache_store"
 require "linkage_checker"
-require "install"
 require "messages"
 require "cask/cask_loader"
 require "cmd/install"
@@ -44,6 +43,9 @@ class FormulaInstaller
   sig { returns(T::Boolean) }
   attr_accessor :link_keg
 
+  sig { returns(T.nilable(Homebrew::DownloadQueue)) }
+  attr_accessor :download_queue
+
   sig {
     params(
       formula:                    Formula,
@@ -58,8 +60,8 @@ class FormulaInstaller
       bottle_arch:                T.nilable(String),
       ignore_deps:                T::Boolean,
       only_deps:                  T::Boolean,
-      include_test_formulae:      T::Array[Formula],
-      build_from_source_formulae: T::Array[Formula],
+      include_test_formulae:      T::Array[String],
+      build_from_source_formulae: T::Array[String],
       env:                        T.nilable(String),
       git:                        T::Boolean,
       interactive:                T::Boolean,
@@ -136,9 +138,12 @@ class FormulaInstaller
     @hold_locks = T.let(false, T::Boolean)
     @show_summary_heading = T.let(false, T::Boolean)
     @etc_var_preinstall = T.let([], T::Array[Pathname])
+    @download_queue = T.let(nil, T.nilable(Homebrew::DownloadQueue))
 
     # Take the original formula instance, which might have been swapped from an API instance to a source instance
     @formula = T.let(T.must(previously_fetched_formula), Formula) if previously_fetched_formula
+
+    @ran_prelude_fetch = T.let(false, T::Boolean)
   end
 
   sig { returns(T::Boolean) }
@@ -272,8 +277,8 @@ class FormulaInstaller
         prefix = Pathname(bottle.cellar.to_s).parent
         opoo <<~EOS
           Building #{formula.full_name} from source as the bottle needs:
-          - HOMEBREW_CELLAR: #{bottle.cellar} (yours is #{HOMEBREW_CELLAR})
-          - HOMEBREW_PREFIX: #{prefix} (yours is #{HOMEBREW_PREFIX})
+          - `HOMEBREW_CELLAR=#{bottle.cellar}` (yours is #{HOMEBREW_CELLAR})
+          - `HOMEBREW_PREFIX=#{prefix}` (yours is #{HOMEBREW_PREFIX})
         EOS
       end
       return false
@@ -294,7 +299,7 @@ class FormulaInstaller
   end
 
   sig { void }
-  def prelude
+  def prelude_fetch
     deprecate_disable_type = DeprecateDisable.type(formula)
     if deprecate_disable_type.present?
       message = "#{formula.full_name} has been #{DeprecateDisable.message(formula)}"
@@ -306,13 +311,39 @@ class FormulaInstaller
         if force?
           opoo message
         else
-          GitHub::Actions.puts_annotation_if_env_set(:error, message)
+          GitHub::Actions.puts_annotation_if_env_set!(:error, message)
           raise CannotInstallFormulaError, message
         end
       end
     end
 
+    if pour_bottle?
+      # Needs to be done before expand_dependencies for compute_dependencies
+      fetch_bottle_tab
+    elsif formula.loaded_from_api?
+      Homebrew::API::Formula.source_download(formula, download_queue:)
+    end
+
+    fetch_fetch_deps unless ignore_deps?
+
+    @ran_prelude_fetch = true
+  end
+
+  sig { void }
+  def prelude
+    prelude_fetch unless @ran_prelude_fetch
+
     Tab.clear_cache
+
+    # Setup bottle_tab_runtime_dependencies for compute_dependencies
+    begin
+      @bottle_tab_runtime_dependencies = formula.bottle_tab_attributes
+                                                .fetch("runtime_dependencies", []).then { |deps| deps || [] }
+                                                .each_with_object({}) { |dep, h| h[dep["full_name"]] = dep }
+                                                .freeze
+    rescue Resource::BottleManifest::Error
+      # If we can't get the bottle manifest, assume a full dependencies install.
+    end
 
     verify_deps_exist unless ignore_deps?
 
@@ -321,7 +352,9 @@ class FormulaInstaller
     forbidden_formula_check
 
     check_install_sanity
-    install_fetch_deps unless ignore_deps?
+
+    # with the download queue: these should have already been installed
+    install_fetch_deps if !ignore_deps? && download_queue.nil?
   end
 
   sig { void }
@@ -378,15 +411,10 @@ class FormulaInstaller
           If you're feeling brave, you can try to install from source with:
             brew install --build-from-source #{formula}
 
-          It is expected behaviour that most formulae will fail to build from source.
-          It is expected behaviour that Homebrew will be buggy and slow when building from source.
-          Do not create any issues about failures building from source on Homebrew's GitHub repositories.
-          Do not create any issues building from source even if you think this message is unrelated.
-          Any opened issues will be immediately closed without response.
-          Do not ask for help from Homebrew or its maintainers on social media.
-          You may ask for help building from source in Homebrew's discussions but are unlikely to receive a response.
-          If building from source fails, try to figure out the problem yourself and submit a fix as a pull request.
-          We will review it but may or may not accept it.
+          This is a Tier 3 configuration:
+            #{Formatter.url("https://docs.brew.sh/Support-Tiers#tier-3")}
+          #{Formatter.bold("Do not report any issues to Homebrew/* repositories!")}
+          Read the above document instead before opening any issues or PRs.
         EOS
         raise CannotInstallFormulaError, message
       end
@@ -425,7 +453,8 @@ class FormulaInstaller
     invalid_arch_dependencies = []
     pinned_unsatisfied_deps = []
     recursive_deps.each do |dep|
-      if (tab = Tab.for_formula(dep.to_formula)) && tab.arch.present? && tab.arch.to_s != Hardware::CPU.arch.to_s
+      tab = Tab.for_formula(dep.to_formula)
+      if tab.arch.present? && tab.arch.to_s != Hardware::CPU.arch.to_s
         invalid_arch_dependencies << "#{dep} was built for #{tab.arch}"
       end
 
@@ -453,6 +482,18 @@ class FormulaInstaller
 
   sig { params(_formula: Formula).returns(T.nilable(T::Boolean)) }
   def fresh_install?(_formula) = false
+
+  sig { void }
+  def fetch_fetch_deps
+    return if @compute_dependencies.blank?
+
+    compute_dependencies(use_cache: false) if @compute_dependencies.any? do |dep,|
+      next false unless dep.implicit?
+
+      fetch_dependencies
+      true
+    end
+  end
 
   sig { void }
   def install_fetch_deps
@@ -485,7 +526,10 @@ class FormulaInstaller
     lock
 
     start_time = Time.now
-    Homebrew::Install.perform_build_from_source_checks if !pour_bottle? && DevelopmentTools.installed?
+    if !pour_bottle? && DevelopmentTools.installed?
+      require "install"
+      Homebrew::Install.perform_build_from_source_checks
+    end
 
     # Warn if a more recent version of this formula is available in the tap.
     begin
@@ -525,6 +569,7 @@ class FormulaInstaller
     oh1 "Installing #{Formatter.identifier(formula.full_name)} #{options}".strip if show_header?
 
     if (tap = formula.tap) && tap.should_report_analytics?
+      require "utils/analytics"
       Utils::Analytics.report_package_event(:formula_install, package_name: formula.name, tap_name: tap.name,
 on_request: installed_on_request?, options:)
     end
@@ -608,7 +653,7 @@ on_request: installed_on_request?, options:)
       raise if Homebrew::EnvConfig.developer?
 
       $stderr.puts "Please report this issue to the #{formula.tap&.full_name} tap".squeeze(" ")
-      $stderr.puts " (not Homebrew/brew or Homebrew/homebrew-core)!" unless formula.core_formula?
+      $stderr.puts " (not Homebrew/* repositories)!" unless formula.core_formula?
       false
     else
       f.linked_keg.exist? && f.opt_prefix.exist?
@@ -781,13 +826,15 @@ on_request: installed_on_request?, options:)
     if deps.empty? && only_deps?
       puts "All dependencies for #{formula.full_name} are satisfied."
     elsif !deps.empty?
-      oh1 "Installing dependencies for #{formula.full_name}: " \
-          "#{deps.map(&:first).map { Formatter.identifier(_1) }.to_sentence}",
-          truncate: false
+      if deps.length > 1
+        oh1 "Installing dependencies for #{formula.full_name}: " \
+            "#{deps.map(&:first).map { Formatter.identifier(_1) }.to_sentence}",
+            truncate: false
+      end
       deps.each { |dep, options| install_dependency(dep, options) }
     end
 
-    @show_header = true unless deps.empty?
+    @show_header = true if deps.length > 1
   end
 
   sig { params(dep: Dependency).void }
@@ -811,6 +858,7 @@ on_request: installed_on_request?, options:)
       quiet:                      quiet?,
       verbose:                    verbose?,
     )
+    fi.download_queue = download_queue
     fi.prelude
     fi.fetch
   end
@@ -833,7 +881,7 @@ on_request: installed_on_request?, options:)
       installed_keg = Keg.new(df.prefix)
       tab ||= installed_keg.tab
       tmp_keg = Pathname.new("#{installed_keg}.tmp")
-      installed_keg.rename(tmp_keg)
+      installed_keg.rename(tmp_keg) unless tmp_keg.directory?
     end
 
     if df.tap.present? && tab.present? && (tab_tap = tab.source["tap"].presence) &&
@@ -870,6 +918,8 @@ on_request: installed_on_request?, options:)
       verbose:                    verbose?,
     )
     oh1 "Installing #{formula.full_name} dependency: #{Formatter.identifier(dep.name)}"
+    # prelude only needed to populate bottle_tab_runtime_dependencies, fetching has already been done.
+    fi.prelude
     fi.install
     fi.finish
   # Handle all possible exceptions installing deps.
@@ -897,8 +947,10 @@ on_request: installed_on_request?, options:)
     return if quiet?
 
     caveats = Caveats.new(formula)
-
     return if caveats.empty?
+
+    Homebrew.messages.record_completions_and_elisp(caveats.completions_and_elisp)
+    return if caveats.caveats.empty?
 
     @show_summary_heading = true
     ohai "Caveats", caveats.to_s
@@ -926,6 +978,7 @@ on_request: installed_on_request?, options:)
 
     fix_dynamic_linkage(keg) if !@poured_bottle || !formula.bottle_specification.skip_relocation?
 
+    require "install"
     Homebrew::Install.global_post_install
 
     if build_bottle? || skip_post_install?
@@ -1227,11 +1280,12 @@ on_request: installed_on_request?, options:)
   # Rescue all possible exceptions when fixing linkage.
   rescue Exception => e # rubocop:disable Lint/RescueException
     ofail "Failed to fix install linkage"
+    puts e
     puts "The formula built, but you may encounter issues using it or linking other"
     puts "formulae against it."
 
     require "utils/backtrace"
-    odebug e, Utils::Backtrace.clean(e)
+    odebug "Backtrace", Utils::Backtrace.clean(e)
 
     @show_summary_heading = true
   end
@@ -1337,9 +1391,13 @@ on_request: installed_on_request?, options:)
 
     return if deps.empty?
 
-    oh1 "Fetching dependencies for #{formula.full_name}: " \
-        "#{deps.map(&:first).map { Formatter.identifier(_1) }.to_sentence}",
-        truncate: false
+    unless download_queue
+      dependencies_string = deps.map(&:first)
+                                .map { Formatter.identifier(_1) }
+                                .to_sentence
+      oh1 "Fetching dependencies for #{formula.full_name}: #{dependencies_string}",
+          truncate: false
+    end
 
     deps.each { |(dep, _options)| fetch_dependency(dep) }
   end
@@ -1356,19 +1414,22 @@ on_request: installed_on_request?, options:)
     end
   end
 
-  sig { void }
-  def fetch_bottle_tab
+  sig { params(quiet: T::Boolean).void }
+  def fetch_bottle_tab(quiet: false)
     return if @fetch_bottle_tab
 
-    begin
-      formula.fetch_bottle_tab
-      @bottle_tab_runtime_dependencies = formula.bottle_tab_attributes
-                                                .fetch("runtime_dependencies", []).then { |deps| deps || [] }
-                                                .each_with_object({}) { |dep, h| h[dep["full_name"]] = dep }
-                                                .freeze
-    rescue DownloadError, Resource::BottleManifest::Error
-      # do nothing
+    if (download_queue = self.download_queue) &&
+       (bottle = formula.bottle) &&
+       (manifest_resource = bottle.github_packages_manifest_resource)
+      download_queue.enqueue(manifest_resource)
+    else
+      begin
+        formula.fetch_bottle_tab(quiet: quiet)
+      rescue DownloadError, Resource::BottleManifest::Error
+        # do nothing
+      end
     end
+
     @fetch_bottle_tab = T.let(true, T.nilable(TrueClass))
   end
 
@@ -1381,7 +1442,7 @@ on_request: installed_on_request?, options:)
     return if only_deps?
     return if formula.local_bottle_path.present?
 
-    oh1 "Fetching #{Formatter.identifier(formula.full_name)}".strip
+    oh1 "Fetching #{Formatter.identifier(formula.full_name)}".strip unless download_queue
 
     downloadable_object = downloadable
     check_attestation = if pour_bottle?(output_warning: true)
@@ -1389,15 +1450,25 @@ on_request: installed_on_request?, options:)
 
       !downloadable_object.cached_download.exist?
     else
-      @formula = Homebrew::API::Formula.source_download(formula) if formula.loaded_from_api?
+      @formula = Homebrew::API::Formula.source_download_formula(formula) if formula.loaded_from_api?
 
-      formula.fetch_patches
-      formula.resources.each(&:fetch)
+      if (download_queue = self.download_queue)
+        formula.enqueue_resources_and_patches(download_queue:)
+      else
+        formula.fetch_patches
+        formula.resources.each(&:fetch)
+      end
+
       downloadable_object = downloadable
 
       false
     end
-    downloadable_object.fetch
+
+    if (download_queue = self.download_queue)
+      download_queue.enqueue(downloadable_object)
+    else
+      downloadable_object.fetch
+    end
 
     # We skip `gh` to avoid a bootstrapping cycle, in the off-chance a user attempts
     # to explicitly `brew install gh` without already having a version for bootstrapping.
@@ -1432,7 +1503,7 @@ on_request: installed_on_request?, options:)
 
           This typically indicates an invalid GitHub API token.
 
-          If you have `HOMEBREW_GITHUB_API_TOKEN` set, check it is correct
+          If you have `$HOMEBREW_GITHUB_API_TOKEN` set, check it is correct
           or unset it and instead run:
 
             gh auth login
@@ -1446,7 +1517,7 @@ on_request: installed_on_request?, options:)
           The bottle for #{formula.name} could not be verified.
 
           This typically indicates a missing GitHub API token, which you
-          can resolve either by setting `HOMEBREW_GITHUB_API_TOKEN` or
+          can resolve either by setting `$HOMEBREW_GITHUB_API_TOKEN` or
           by running:
 
             gh auth login
@@ -1489,7 +1560,10 @@ on_request: installed_on_request?, options:)
   sig { void }
   def pour
     HOMEBREW_CELLAR.cd do
-      downloadable.downloader.stage
+      # download queue has already done the actual staging but we'll lie about
+      # pouring now for nicer output
+      ohai "Pouring #{downloadable.downloader.basename}"
+      downloadable.downloader.stage if download_queue.nil? || !formula.prefix.exist?
     end
 
     Tab.clear_cache
@@ -1562,6 +1636,9 @@ on_request: installed_on_request?, options:)
 
     invalid_licenses = []
     forbidden_licenses = forbidden_licenses.split.each_with_object({}) do |license, hash|
+      license_sym = license.to_sym
+      license = license_sym if SPDX::ALLOWED_LICENSE_SYMBOLS.include?(license_sym)
+
       unless SPDX.valid_license?(license)
         invalid_licenses << license
         next
@@ -1572,7 +1649,7 @@ on_request: installed_on_request?, options:)
 
     if invalid_licenses.present?
       opoo <<~EOS
-        HOMEBREW_FORBIDDEN_LICENSES contains invalid license identifiers: #{invalid_licenses.to_sentence}
+        `$HOMEBREW_FORBIDDEN_LICENSES` contains invalid license identifiers: #{invalid_licenses.to_sentence}
         These licenses will not be forbidden. See the valid SPDX license identifiers at:
           #{Formatter.url("https://spdx.org/licenses/")}
         And the licenses for a formula with:
@@ -1594,7 +1671,7 @@ on_request: installed_on_request?, options:)
 
         raise CannotInstallFormulaError, <<~EOS
           The installation of #{formula.name} has a dependency on #{dep.name} where all
-          its licenses were forbidden by #{owner} in `HOMEBREW_FORBIDDEN_LICENSES`:
+          its licenses were forbidden by #{owner} in `$HOMEBREW_FORBIDDEN_LICENSES`:
             #{SPDX.license_expression_to_string dep_f.license}#{owner_contact}
         EOS
       end
@@ -1605,7 +1682,7 @@ on_request: installed_on_request?, options:)
     return unless SPDX.licenses_forbid_installation? formula.license, forbidden_licenses
 
     raise CannotInstallFormulaError, <<~EOS
-      #{formula.name}'s licenses are all forbidden by #{owner} in `HOMEBREW_FORBIDDEN_LICENSES`:
+      #{formula.name}'s licenses are all forbidden by #{owner} in `$HOMEBREW_FORBIDDEN_LICENSES`:
         #{SPDX.license_expression_to_string formula.license}#{owner_contact}
     EOS
   end
@@ -1626,9 +1703,9 @@ on_request: installed_on_request?, options:)
 
         error_message = "The installation of #{formula.name} has a dependency #{dep.name}\n" \
                         "from the #{dep_tap} tap but #{owner} "
-        error_message << "has not allowed this tap in `HOMEBREW_ALLOWED_TAPS`" unless dep_tap.allowed_by_env?
+        error_message << "has not allowed this tap in `$HOMEBREW_ALLOWED_TAPS`" unless dep_tap.allowed_by_env?
         error_message << " and\n" if !dep_tap.allowed_by_env? && dep_tap.forbidden_by_env?
-        error_message << "has forbidden this tap in `HOMEBREW_FORBIDDEN_TAPS`" if dep_tap.forbidden_by_env?
+        error_message << "has forbidden this tap in `$HOMEBREW_FORBIDDEN_TAPS`" if dep_tap.forbidden_by_env?
         error_message << ".#{owner_contact}"
 
         raise CannotInstallFormulaError, error_message
@@ -1642,9 +1719,9 @@ on_request: installed_on_request?, options:)
 
     error_message = "The installation of #{formula.full_name} has the tap #{formula_tap}\n" \
                     "but #{owner} "
-    error_message << "has not allowed this tap in `HOMEBREW_ALLOWED_TAPS`" unless formula_tap.allowed_by_env?
+    error_message << "has not allowed this tap in `$HOMEBREW_ALLOWED_TAPS`" unless formula_tap.allowed_by_env?
     error_message << " and\n" if !formula_tap.allowed_by_env? && formula_tap.forbidden_by_env?
-    error_message << "has forbidden this tap in `HOMEBREW_FORBIDDEN_TAPS`" if formula_tap.forbidden_by_env?
+    error_message << "has forbidden this tap in `$HOMEBREW_FORBIDDEN_TAPS`" if formula_tap.forbidden_by_env?
     error_message << ".#{owner_contact}"
 
     raise CannotInstallFormulaError, error_message
@@ -1674,7 +1751,7 @@ on_request: installed_on_request?, options:)
 
         raise CannotInstallFormulaError, <<~EOS
           The installation of #{formula.name} has a dependency #{dep_name}
-          but the #{dep_name} formula was forbidden by #{owner} in `HOMEBREW_FORBIDDEN_FORMULAE`.#{owner_contact}
+          but the #{dep_name} formula was forbidden by #{owner} in `$HOMEBREW_FORBIDDEN_FORMULAE`.#{owner_contact}
         EOS
       end
     end
@@ -1691,7 +1768,7 @@ on_request: installed_on_request?, options:)
 
     raise CannotInstallFormulaError, <<~EOS
       The installation of #{formula_name} was forbidden by #{owner}
-      in `HOMEBREW_FORBIDDEN_FORMULAE`.#{owner_contact}
+      in `$HOMEBREW_FORBIDDEN_FORMULAE`.#{owner_contact}
     EOS
   end
 

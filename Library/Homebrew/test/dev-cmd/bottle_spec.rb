@@ -414,8 +414,8 @@ RSpec.describe Homebrew::DevCmd::Bottle do
       end
 
       # TODO: add deduplication tests e.g.
-      # it "deduplicates JSON files with matching macOS checksums"
-      # it "deduplicates JSON files with matching OS checksums" do
+      #       it "deduplicates JSON files with matching macOS checksums"
+      #       it "deduplicates JSON files with matching OS checksums" do
     end
 
     describe "#merge_bottle_spec" do

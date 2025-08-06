@@ -54,8 +54,6 @@ module SharedEnvExtension
     @debug_symbols = debug_symbols
     reset
   end
-  alias generic_shared_setup_build_environment setup_build_environment
-  private :generic_shared_setup_build_environment
 
   sig { void }
   def reset
@@ -113,6 +111,11 @@ module SharedEnvExtension
   sig { params(key: String, path: T.any(String, Pathname)).void }
   def append_path(key, path)
     self[key] = PATH.new(self[key]).append(path)
+  end
+
+  sig { params(rustflags: String).void }
+  def append_to_rustflags(rustflags)
+    append("HOMEBREW_RUSTFLAGS", rustflags)
   end
 
   # Prepends a directory to `PATH`.

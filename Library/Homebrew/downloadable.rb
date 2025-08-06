@@ -1,4 +1,4 @@
-# typed: true # rubocop:todo Sorbet/StrictSigil
+# typed: strict
 # frozen_string_literal: true
 
 require "url"
@@ -12,7 +12,7 @@ module Downloadable
   abstract!
   requires_ancestor { Kernel }
 
-  sig { overridable.returns(T.nilable(URL)) }
+  sig { overridable.returns(T.any(NilClass, String, URL)) }
   attr_reader :url
 
   sig { overridable.returns(T.nilable(Checksum)) }
@@ -23,9 +23,16 @@ module Downloadable
 
   sig { void }
   def initialize
+    @url = T.let(nil, T.nilable(URL))
+    @checksum = T.let(nil, T.nilable(Checksum))
     @mirrors = T.let([], T::Array[String])
+    @version = T.let(nil, T.nilable(Version))
+    @download_strategy = T.let(nil, T.nilable(T::Class[AbstractDownloadStrategy]))
+    @downloader = T.let(nil, T.nilable(AbstractDownloadStrategy))
+    @download_name = T.let(nil, T.nilable(String))
   end
 
+  sig { params(other: Object).void }
   def initialize_dup(other)
     super
     @checksum = @checksum.dup
@@ -41,13 +48,11 @@ module Downloadable
     super
   end
 
-  sig { abstract.returns(String) }
-  def name; end
-
   sig { returns(String) }
-  def download_type
-    T.must(self.class.name&.split("::")&.last).gsub(/([[:lower:]])([[:upper:]])/, '\1 \2').downcase
-  end
+  def download_queue_name = download_name
+
+  sig { abstract.returns(String) }
+  def download_queue_type; end
 
   sig(:final) { returns(T::Boolean) }
   def downloaded?
@@ -72,9 +77,9 @@ module Downloadable
     version unless version&.null?
   end
 
-  sig { overridable.returns(T.class_of(AbstractDownloadStrategy)) }
+  sig { overridable.returns(T::Class[AbstractDownloadStrategy]) }
   def download_strategy
-    @download_strategy ||= determine_url&.download_strategy
+    @download_strategy ||= T.must(determine_url).download_strategy
   end
 
   sig { overridable.returns(AbstractDownloadStrategy) }
@@ -117,6 +122,8 @@ module Downloadable
       filename.verify_checksum(checksum)
     end
   rescue ChecksumMissingError
+    return if silence_checksum_missing_error?
+
     opoo <<~EOS
       Cannot verify integrity of '#{filename.basename}'.
       No checksum was provided.
@@ -125,12 +132,17 @@ module Downloadable
     EOS
   end
 
+  private
+
   sig { overridable.returns(String) }
   def download_name
-    @download_name ||= File.basename(determine_url.to_s)
+    @download_name ||= File.basename(determine_url.to_s).freeze
   end
 
-  private
+  sig { overridable.returns(T::Boolean) }
+  def silence_checksum_missing_error?
+    false
+  end
 
   sig { overridable.returns(T.nilable(URL)) }
   def determine_url

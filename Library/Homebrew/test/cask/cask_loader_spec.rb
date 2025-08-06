@@ -45,10 +45,6 @@ RSpec.describe Cask::CaskLoader, :cask do
       end
 
       context "when using the API" do
-        before do
-          ENV.delete("HOMEBREW_NO_INSTALL_FROM_API")
-        end
-
         it "warns when using the short token" do
           expect do
             expect(described_class.for("version-newest")).to be_a Cask::CaskLoader::FromAPILoader

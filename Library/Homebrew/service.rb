@@ -1,8 +1,8 @@
-# typed: true # rubocop:todo Sorbet/StrictSigil
+# typed: strict
 # frozen_string_literal: true
 
 require "ipaddr"
-require "extend/on_system"
+require "on_system"
 require "utils/service"
 
 module Homebrew
@@ -23,13 +23,38 @@ module Homebrew
     PROCESS_TYPE_ADAPTIVE = :adaptive
 
     KEEP_ALIVE_KEYS = [:always, :successful_exit, :crashed, :path].freeze
+    SOCKET_STRING_REGEX = %r{^([a-z]+)://(.+):([0-9]+)$}i
 
-    # sig { params(formula: Formula).void }
+    RunParam = T.type_alias { T.nilable(T.any(T::Array[T.any(String, Pathname)], String, Pathname)) }
+    Sockets = T.type_alias { T::Hash[Symbol, { host: String, port: String, type: String }] }
+
+    sig { returns(String) }
+    attr_reader :plist_name, :service_name
+
+    sig { params(formula: Formula, block: T.nilable(T.proc.void)).void }
     def initialize(formula, &block)
+      @cron = T.let({}, T::Hash[Symbol, T.any(Integer, String)])
+      @environment_variables = T.let({}, T::Hash[Symbol, String])
+      @error_log_path = T.let(nil, T.nilable(String))
       @formula = formula
-      @run_type = RUN_TYPE_IMMEDIATE
-      @run_at_load = true
-      @environment_variables = {}
+      @input_path = T.let(nil, T.nilable(String))
+      @interval = T.let(nil, T.nilable(Integer))
+      @keep_alive = T.let({}, T::Hash[Symbol, T.untyped])
+      @launch_only_once = T.let(false, T::Boolean)
+      @log_path = T.let(nil, T.nilable(String))
+      @macos_legacy_timers = T.let(false, T::Boolean)
+      @plist_name = T.let(default_plist_name, String)
+      @process_type = T.let(nil, T.nilable(Symbol))
+      @require_root = T.let(false, T::Boolean)
+      @restart_delay = T.let(nil, T.nilable(Integer))
+      @root_dir = T.let(nil, T.nilable(String))
+      @run = T.let([], T::Array[String])
+      @run_at_load = T.let(true, T::Boolean)
+      @run_params = T.let(nil, T.any(RunParam, T::Hash[Symbol, RunParam]))
+      @run_type = T.let(RUN_TYPE_IMMEDIATE, Symbol)
+      @service_name = T.let(default_service_name, String)
+      @sockets = T.let({}, Sockets)
+      @working_dir = T.let(nil, T.nilable(String))
       instance_eval(&block) if block
     end
 
@@ -44,18 +69,8 @@ module Homebrew
     end
 
     sig { returns(String) }
-    def plist_name
-      @plist_name ||= default_plist_name
-    end
-
-    sig { returns(String) }
     def default_service_name
       "homebrew.#{@formula.name}"
-    end
-
-    sig { returns(String) }
-    def service_name
-      @service_name ||= default_service_name
     end
 
     sig { params(macos: T.nilable(String), linux: T.nilable(String)).void }
@@ -68,9 +83,9 @@ module Homebrew
 
     sig {
       params(
-        command: T.nilable(T.any(T::Array[T.any(String, Pathname)], String, Pathname)),
-        macos:   T.nilable(T.any(T::Array[T.any(String, Pathname)], String, Pathname)),
-        linux:   T.nilable(T.any(T::Array[T.any(String, Pathname)], String, Pathname)),
+        command: T.nilable(RunParam),
+        macos:   T.nilable(RunParam),
+        linux:   T.nilable(RunParam),
       ).returns(T.nilable(T::Array[T.any(String, Pathname)]))
     }
     def run(command = nil, macos: nil, linux: nil)
@@ -86,9 +101,9 @@ module Homebrew
       when nil
         @run
       when String, Pathname
-        @run = [command]
+        @run = [command.to_s]
       when Array
-        @run = command
+        @run = command.map(&:to_s)
       end
     end
 
@@ -161,18 +176,17 @@ module Homebrew
       end
     end
 
-    sig { params(value: T.nilable(T::Boolean)).returns(T.nilable(T::Boolean)) }
+    sig { params(value: T.nilable(T::Boolean)).returns(T::Boolean) }
     def require_root(value = nil)
       case value
       when nil
         @require_root
-      when true, false
+      when TrueClass, FalseClass
         @require_root = value
       end
     end
 
     # Returns a `Boolean` describing if a service requires root access.
-    # @return [Boolean]
     sig { returns(T::Boolean) }
     def requires_root?
       @require_root.present? && @require_root == true
@@ -183,16 +197,14 @@ module Homebrew
       case value
       when nil
         @run_at_load
-      when true, false
+      when TrueClass, FalseClass
         @run_at_load = value
       end
     end
 
-    SOCKET_STRING_REGEX = %r{^([a-z]+)://(.+):([0-9]+)$}i
-
     sig {
       params(value: T.nilable(T.any(String, T::Hash[Symbol, String])))
-        .returns(T.nilable(T::Hash[Symbol, T::Hash[Symbol, String]]))
+        .returns(T::Hash[Symbol, T::Hash[Symbol, String]])
     }
     def sockets(value = nil)
       return @sockets if value.nil?
@@ -204,9 +216,11 @@ module Homebrew
         value
       end.transform_values do |socket_string|
         match = socket_string.match(SOCKET_STRING_REGEX)
-        raise TypeError, "Service#sockets a formatted socket definition as <type>://<host>:<port>" if match.blank?
+        raise TypeError, "Service#sockets a formatted socket definition as <type>://<host>:<port>" unless match
 
-        type, host, port = match.captures
+        type = T.must(match[1])
+        host = T.must(match[2])
+        port = T.must(match[3])
 
         begin
           IPAddr.new(host)
@@ -219,18 +233,17 @@ module Homebrew
     end
 
     # Returns a `Boolean` describing if a service is set to be kept alive.
-    # @return [Boolean]
     sig { returns(T::Boolean) }
     def keep_alive?
-      @keep_alive.present? && @keep_alive[:always] != false
+      !@keep_alive.empty? && @keep_alive[:always] != false
     end
 
-    sig { params(value: T.nilable(T::Boolean)).returns(T.nilable(T::Boolean)) }
+    sig { params(value: T.nilable(T::Boolean)).returns(T::Boolean) }
     def launch_only_once(value = nil)
       case value
       when nil
         @launch_only_once
-      when true, false
+      when TrueClass, FalseClass
         @launch_only_once = value
       end
     end
@@ -281,13 +294,13 @@ module Homebrew
       end
     end
 
-    sig { params(value: T.nilable(String)).returns(T.nilable(Hash)) }
+    sig { params(value: T.nilable(String)).returns(T::Hash[Symbol, T.any(Integer, String)]) }
     def cron(value = nil)
       case value
       when nil
         @cron
       when String
-        @cron = parse_cron(T.must(value))
+        @cron = parse_cron(value)
       end
     end
 
@@ -345,12 +358,12 @@ module Homebrew
       end
     end
 
-    sig { params(value: T.nilable(T::Boolean)).returns(T.nilable(T::Boolean)) }
+    sig { params(value: T.nilable(T::Boolean)).returns(T::Boolean) }
     def macos_legacy_timers(value = nil)
       case value
       when nil
         @macos_legacy_timers
-      when true, false
+      when TrueClass, FalseClass
         @macos_legacy_timers = value
       end
     end
@@ -362,36 +375,33 @@ module Homebrew
       "#{HOMEBREW_PREFIX}/bin:#{HOMEBREW_PREFIX}/sbin:/usr/bin:/bin:/usr/sbin:/sbin"
     end
 
-    sig { returns(T.nilable(T::Array[String])) }
+    sig { returns(T::Array[String]) }
     def command
-      @run&.map(&:to_s)&.map { |arg| arg.start_with?("~") ? File.expand_path(arg) : arg }
+      @run.map(&:to_s).map { |arg| arg.start_with?("~") ? File.expand_path(arg) : arg }
     end
 
     sig { returns(T::Boolean) }
     def command?
-      @run.present?
+      !@run.empty?
     end
 
     # Returns the `String` command to run manually instead of the service.
-    # @return [String]
     sig { returns(String) }
     def manual_command
       vars = @environment_variables.except(:PATH)
                                    .map { |k, v| "#{k}=\"#{v}\"" }
 
-      out = vars + T.must(command).map { |arg| Utils::Shell.sh_quote(arg) } if command?
-      out.join(" ")
+      vars.concat(command.map { |arg| Utils::Shell.sh_quote(arg) })
+      vars.join(" ")
     end
 
     # Returns a `Boolean` describing if a service is timed.
-    # @return [Boolean]
     sig { returns(T::Boolean) }
     def timed?
       @run_type == RUN_TYPE_CRON || @run_type == RUN_TYPE_INTERVAL
     end
 
     # Returns a `String` plist.
-    # @return [String]
     sig { returns(String) }
     def to_plist
       # command needs to be first because it initializes all other values
@@ -425,7 +435,7 @@ module Homebrew
         end
       end
 
-      if @sockets.present?
+      unless @sockets.empty?
         base[:Sockets] = {}
         @sockets.each do |name, info|
           base[:Sockets][name] = {
@@ -436,7 +446,7 @@ module Homebrew
         end
       end
 
-      if @cron.present? && @run_type == RUN_TYPE_CRON
+      if !@cron.empty? && @run_type == RUN_TYPE_CRON
         base[:StartCalendarInterval] = @cron.reject { |_, value| value == "*" }
       end
 
@@ -452,12 +462,11 @@ module Homebrew
     end
 
     # Returns a `String` systemd unit.
-    # @return [String]
     sig { returns(String) }
     def to_systemd_unit
       # command needs to be first because it initializes all other values
-      cmd = command&.map { |arg| Utils::Service.systemd_quote(arg) }
-                   &.join(" ")
+      cmd = command.map { |arg| Utils::Service.systemd_quote(arg) }
+                   .join(" ")
 
       options = []
       options << "Type=#{(@launch_only_once == true) ? "oneshot" : "simple"}"
@@ -485,7 +494,6 @@ module Homebrew
     end
 
     # Returns a `String` systemd unit timer.
-    # @return [String]
     sig { returns(String) }
     def to_systemd_timer
       options = []
@@ -512,7 +520,7 @@ module Homebrew
     end
 
     # Prepare the service hash for inclusion in the formula API JSON.
-    sig { returns(Hash) }
+    sig { returns(T::Hash[Symbol, T.untyped]) }
     def to_hash
       name_params = {
         macos: (plist_name if plist_name != default_plist_name),
@@ -523,15 +531,15 @@ module Homebrew
 
       cron_string = if @cron.present?
         [:Minute, :Hour, :Day, :Month, :Weekday]
-          .map { |key| @cron[key].to_s }
+          .filter_map { |key| @cron[key].to_s.presence }
           .join(" ")
       end
 
-      sockets_var = if @sockets.present?
+      sockets_var = unless @sockets.empty?
         @sockets.transform_values { |info| "#{info[:type]}://#{info[:host]}:#{info[:port]}" }
                 .then do |sockets_hash|
                   # TODO: Remove this code when all users are running on versions of Homebrew
-                  # that can process sockets hashes (this commit or later).
+                  #       that can process sockets hashes (this commit or later).
                   if sockets_hash.size == 1 && sockets_hash.key?(:listeners)
                     # When original #sockets argument was a string: `sockets "tcp://127.0.0.1:80"`
                     sockets_hash.fetch(:listeners)
@@ -547,7 +555,7 @@ module Homebrew
         run:                   @run_params,
         run_type:              @run_type,
         interval:              @interval,
-        cron:                  cron_string,
+        cron:                  cron_string.presence,
         keep_alive:            @keep_alive,
         launch_only_once:      @launch_only_once,
         require_root:          @require_root,
@@ -561,11 +569,11 @@ module Homebrew
         process_type:          @process_type,
         macos_legacy_timers:   @macos_legacy_timers,
         sockets:               sockets_var,
-      }.compact
+      }.compact_blank
     end
 
     # Turn the service API hash values back into what is expected by the formula DSL.
-    sig { params(api_hash: Hash).returns(Hash) }
+    sig { params(api_hash: T::Hash[String, T.untyped]).returns(T::Hash[Symbol, T.untyped]) }
     def self.from_hash(api_hash)
       hash = {}
       hash[:name] = api_hash["name"].transform_keys(&:to_sym) if api_hash.key?("name")

@@ -41,6 +41,15 @@ module RuboCop
 
           return unless hash_node.hash_type?
 
+          unless stanza_node.source.match?(/",\n      *\w+:/)
+            add_offense(
+              stanza_node.source_range,
+              message: "Keyword URL parameter should be on a new indented line.",
+            ) do |corrector|
+              corrector.replace(stanza_node.source_range, stanza_node.source.gsub(/",\s*/, "\",\n      "))
+            end
+          end
+
           hash_node.each_pair do |key_node, value_node|
             next if key_node.source != "verified"
             next unless value_node.str_type?

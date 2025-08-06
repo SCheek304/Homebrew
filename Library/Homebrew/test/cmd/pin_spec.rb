@@ -11,4 +11,10 @@ RSpec.describe Homebrew::Cmd::Pin do
 
     expect { brew "pin", "testball" }.to be_a_success
   end
+
+  it "fails with an uninstalled Formula", :integration_test do
+    setup_test_formula "testball"
+
+    expect { brew "pin", "testball" }.to be_a_failure
+  end
 end

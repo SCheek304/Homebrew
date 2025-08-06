@@ -33,16 +33,14 @@ module Homebrew
                             "integration.",
                replacement: false,
                disable:     true
-        switch "--[no-]force-auto-update",
-               hidden: true
         switch "--custom-remote",
                description: "Install or change a tap with a custom remote. Useful for mirrors."
         switch "--repair",
                description: "Add missing symlinks to tap manpages and shell completions. Correct git remote " \
                             "refs for any taps where upstream HEAD branch has been renamed."
         switch "--eval-all",
-               description: "Evaluate all the formulae, casks and aliases in the new tap to check validity. " \
-                            "Implied if `$HOMEBREW_EVAL_ALL` is set."
+               description: "Evaluate all formulae, casks and aliases in the new tap to check their validity.",
+               env:         :eval_all
         switch "-f", "--force",
                description: "Force install core taps even under API mode."
 
@@ -64,7 +62,7 @@ module Homebrew
             tap.install clone_target:  args.named.second,
                         custom_remote: args.custom_remote?,
                         quiet:         args.quiet?,
-                        verify:        args.eval_all? || Homebrew::EnvConfig.eval_all?,
+                        verify:        args.eval_all?,
                         force:         args.force?
           rescue Tap::InvalidNameError, TapRemoteMismatchError, TapNoCustomRemoteError => e
             odie e

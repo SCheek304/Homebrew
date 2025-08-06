@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 require "cask/utils"
-require "extend/on_system"
+require "on_system"
 
 module Cask
   class DSL

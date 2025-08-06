@@ -167,9 +167,9 @@ module Homebrew
           @command_name = T.let(T.must(cmd_location.label).chomp("_args").tr("_", "-"), String)
           @is_dev_cmd = T.let(T.must(cmd_location.absolute_path).start_with?(Commands::HOMEBREW_DEV_CMD_PATH),
                               T::Boolean)
-          odeprecated(
+          odisabled(
             "`brew #{@command_name}'. This command needs to be refactored, as it is written in a style that",
-            "inherits from `Homebrew::AbstractCommand' ( see https://docs.brew.sh/External-Commands )",
+            "subclassing of `Homebrew::AbstractCommand' ( see https://docs.brew.sh/External-Commands )",
             disable_for_developers: false,
           )
         end
@@ -208,11 +208,15 @@ module Homebrew
         return if global_switch
 
         description = option_description(description, *names, hidden:)
-        process_option(*names, description, type: :switch, hidden:) unless disable
-
+        env, counterpart = env
+        if env && @non_global_processed_options.any?
+          affix = counterpart ? " and `#{counterpart}` is passed." : "."
+          description += " Enabled by default if `$HOMEBREW_#{env.upcase}` is set#{affix}"
+        end
         if replacement || disable
           description += " (#{disable ? "disabled" : "deprecated"}#{"; replaced by #{replacement}" if replacement})"
         end
+        process_option(*names, description, type: :switch, hidden:) unless disable
 
         @parser.public_send(method, *names, *wrap_option_desc(description)) do |value|
           # This odeprecated should stick around indefinitely.
@@ -441,7 +445,7 @@ module Homebrew
                  .gsub(/`(.*?)`/m, "#{Tty.bold}\\1#{Tty.reset}")
                  .gsub(%r{<([^\s]+?://[^\s]+?)>}) { |url| Formatter.url(url) }
                  .gsub(/\*(.*?)\*|<(.*?)>/m) do |underlined|
-                   underlined[1...-1].gsub(/^(\s*)(.*?)$/, "\\1#{Tty.underline}\\2#{Tty.reset}")
+                   T.must(underlined[1...-1]).gsub(/^(\s*)(.*?)$/, "\\1#{Tty.underline}\\2#{Tty.reset}")
                  end
       end
 

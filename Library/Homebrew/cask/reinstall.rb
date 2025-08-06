@@ -23,11 +23,22 @@ module Cask
 
       quarantine = true if quarantine.nil?
 
-      casks.each do |cask|
-        Installer
-          .new(cask, binaries:, verbose:, force:, skip_cask_deps:, require_sha:, reinstall: true, quarantine:, zap:)
-          .install
+      download_queue = Homebrew::DownloadQueue.new(pour: true) if Homebrew::EnvConfig.download_concurrency > 1
+      cask_installers = casks.map do |cask|
+        Installer.new(cask, binaries:, verbose:, force:, skip_cask_deps:, require_sha:, reinstall: true,
+                      quarantine:, zap:, download_queue:)
       end
+
+      if download_queue
+        cask_installers.each(&:prelude)
+
+        oh1 "Fetching downloads for: #{casks.map { |cask| Formatter.identifier(cask.full_name) }.to_sentence}",
+            truncate: false
+        cask_installers.each(&:enqueue_downloads)
+        download_queue.fetch
+      end
+
+      cask_installers.each(&:install)
     end
   end
 end

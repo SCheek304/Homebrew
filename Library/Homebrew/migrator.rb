@@ -49,7 +49,7 @@ class Migrator
   # Old name of the formula.
   attr_reader :oldname
 
-  # Path to oldname's cellar.
+  # Path to oldname's Cellar.
   attr_reader :old_cellar
 
   # Path to oldname pin.
@@ -76,10 +76,10 @@ class Migrator
   # New name of the formula.
   attr_reader :newname
 
-  # Path to newname cellar according to new name.
+  # Path to newname Cellar according to new name.
   attr_reader :new_cellar
 
-  # True if new cellar existed at initialization time.
+  # True if new Cellar existed at initialization time.
   attr_reader :new_cellar_existed
 
   # Path to newname pin.

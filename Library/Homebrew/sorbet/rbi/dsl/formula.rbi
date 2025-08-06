@@ -10,6 +10,9 @@ class Formula
   def allow_network_access!(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T::Boolean) }
+  def autobump?(*args, &block); end
+
+  sig { params(args: T.untyped, block: T.untyped).returns(T::Boolean) }
   def bottle_defined?(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
@@ -52,7 +55,10 @@ class Formula
   def deprecation_reason(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
-  def deprecation_replacement(*args, &block); end
+  def deprecation_replacement_cask(*args, &block); end
+
+  sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
+  def deprecation_replacement_formula(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
   def deps(*args, &block); end
@@ -67,7 +73,10 @@ class Formula
   def disable_reason(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
-  def disable_replacement(*args, &block); end
+  def disable_replacement_cask(*args, &block); end
+
+  sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
+  def disable_replacement_formula(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T::Boolean) }
   def disabled?(*args, &block); end
@@ -101,6 +110,15 @@ class Formula
 
   sig { params(args: T.untyped, block: T.untyped).returns(T::Boolean) }
   def network_access_allowed?(*args, &block); end
+
+  sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
+  def no_autobump!(*args, &block); end
+
+  sig { params(args: T.untyped, block: T.untyped).returns(T::Boolean) }
+  def no_autobump_defined?(*args, &block); end
+
+  sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
+  def no_autobump_message(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T::Boolean) }
   def option_defined?(*args, &block); end

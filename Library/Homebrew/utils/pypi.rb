@@ -82,10 +82,10 @@ module PyPI
         url["packagetype"] == "sdist"
       end
 
-      # If there isn't an sdist, we use the first universal wheel.
+      # If there isn't an sdist, we use the first pure Python3 or universal wheel
       if dist.nil?
         dist = json["urls"].find do |url|
-          url["filename"].end_with?("-none-any.whl")
+          url["filename"].match?("[.-]py3[^-]*-none-any.whl$")
         end
       end
 
@@ -152,7 +152,8 @@ module PyPI
         @extras ||= T.let([], T.nilable(T::Array[String]))
         @version ||= T.let(match[2], T.nilable(String))
       elsif @is_url
-        ensure_formula_installed!(@python_name)
+        require "formula"
+        Formula[@python_name].ensure_installed!
 
         # The URL might be a source distribution hosted somewhere;
         # try and use `pip install -q --no-deps --dry-run --report ...` to get its
@@ -260,7 +261,8 @@ module PyPI
       missing_msg = "formulae required to update \"#{formula.name}\" resources: #{missing_dependencies.join(", ")}"
       odie "Missing #{missing_msg}" unless install_dependencies
       ohai "Installing #{missing_msg}"
-      missing_dependencies.each(&:ensure_formula_installed!)
+      require "formula"
+      missing_dependencies.each { |dep| Formula[dep].ensure_installed! }
     end
 
     python_deps = formula.deps
@@ -285,7 +287,7 @@ module PyPI
       url = if stable.specs[:tag].present?
         "git+#{stable.url}@#{stable.specs[:tag]}"
       else
-        stable.url
+        T.must(stable.url)
       end
       Package.new(url, is_url: true, python_name:)
     end
@@ -334,7 +336,8 @@ module PyPI
       end
     end
 
-    ensure_formula_installed!(python_name)
+    require "formula"
+    Formula[python_name].ensure_installed!
 
     # Resolve the dependency tree of all input packages
     show_info = !print_only && !silent

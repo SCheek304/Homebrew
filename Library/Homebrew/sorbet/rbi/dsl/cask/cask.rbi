@@ -10,9 +10,6 @@ class Cask::Cask
   def app(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
-  def appcast(*args, &block); end
-
-  sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
   def appdir(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
@@ -29,6 +26,9 @@ class Cask::Cask
 
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
   def auto_updates(*args, &block); end
+
+  sig { params(args: T.untyped, block: T.untyped).returns(T::Boolean) }
+  def autobump?(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
   def bash_completion(*args, &block); end
@@ -67,7 +67,10 @@ class Cask::Cask
   def deprecation_reason(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
-  def deprecation_replacement(*args, &block); end
+  def deprecation_replacement_cask(*args, &block); end
+
+  sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
+  def deprecation_replacement_formula(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
   def desc(*args, &block); end
@@ -85,13 +88,13 @@ class Cask::Cask
   def disable_reason(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
-  def disable_replacement(*args, &block); end
+  def disable_replacement_cask(*args, &block); end
+
+  sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
+  def disable_replacement_formula(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T::Boolean) }
   def disabled?(*args, &block); end
-
-  sig { params(args: T.untyped, block: T.untyped).returns(T::Boolean) }
-  def discontinued?(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
   def fish_completion(*args, &block); end
@@ -135,11 +138,20 @@ class Cask::Cask
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
   def name(*args, &block); end
 
+  sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
+  def no_autobump!(*args, &block); end
+
+  sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
+  def no_autobump_message(*args, &block); end
+
   sig { params(args: T.untyped, block: T.untyped).returns(T.nilable(MacOSVersion)) }
   def on_system_block_min_os(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T::Boolean) }
   def on_system_blocks_exist?(*args, &block); end
+
+  sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
+  def os(*args, &block); end
 
   sig { params(args: T.untyped, block: T.untyped).returns(T.untyped) }
   def pkg(*args, &block); end

@@ -346,7 +346,8 @@ class Version
 
   sig { params(spec: T.any(String, Pathname), detected_from_url: T::Boolean).returns(Version) }
   def self.parse(spec, detected_from_url: false)
-    spec = CGI.unescape(spec.to_s) if detected_from_url
+    # This type of full-URL decoding is not technically correct but we only need a rough decode for version parsing.
+    spec = URI.decode_www_form_component(spec.to_s) if detected_from_url
 
     spec = Pathname(spec)
 
@@ -775,6 +776,6 @@ class Version
 
   sig { params(first: Integer, second: Integer).returns(Integer) }
   def max(first, second)
-    (first > second) ? first : second
+    [first, second].max
   end
 end

@@ -1,9 +1,10 @@
-# typed: true # rubocop:todo Sorbet/StrictSigil
+# typed: strict
 # frozen_string_literal: true
 
 require "system_command"
 
 module GitHub
+  sig { params(scopes: T::Array[String]).returns(String) }
   def self.pat_blurb(scopes = ALL_SCOPES)
     require "utils/formatter"
     require "utils/shell"
@@ -16,20 +17,21 @@ module GitHub
     EOS
   end
 
-  API_URL = "https://api.github.com"
-  API_MAX_PAGES = 50
+  API_URL = T.let("https://api.github.com", String)
+  API_MAX_PAGES = T.let(50, Integer)
   private_constant :API_MAX_PAGES
-  API_MAX_ITEMS = 5000
+  API_MAX_ITEMS = T.let(5000, Integer)
   private_constant :API_MAX_ITEMS
-  PAGINATE_RETRY_COUNT = 3
+  PAGINATE_RETRY_COUNT = T.let(3, Integer)
   private_constant :PAGINATE_RETRY_COUNT
 
-  CREATE_GIST_SCOPES = ["gist"].freeze
-  CREATE_ISSUE_FORK_OR_PR_SCOPES = ["repo"].freeze
-  CREATE_WORKFLOW_SCOPES = ["workflow"].freeze
-  ALL_SCOPES = (CREATE_GIST_SCOPES + CREATE_ISSUE_FORK_OR_PR_SCOPES + CREATE_WORKFLOW_SCOPES).freeze
+  CREATE_GIST_SCOPES = T.let(["gist"].freeze, T::Array[String])
+  CREATE_ISSUE_FORK_OR_PR_SCOPES = T.let(["repo"].freeze, T::Array[String])
+  CREATE_WORKFLOW_SCOPES = T.let(["workflow"].freeze, T::Array[String])
+  ALL_SCOPES = T.let((CREATE_GIST_SCOPES + CREATE_ISSUE_FORK_OR_PR_SCOPES + CREATE_WORKFLOW_SCOPES).freeze,
+                     T::Array[String])
   private_constant :ALL_SCOPES
-  GITHUB_PERSONAL_ACCESS_TOKEN_REGEX = /^(?:[a-f0-9]{40}|(?:gh[pousr]|github_pat)_\w{36,251})$/
+  GITHUB_PERSONAL_ACCESS_TOKEN_REGEX = T.let(/^(?:[a-f0-9]{40}|(?:gh[pousr]|github_pat)_\w{36,251})$/, Regexp)
   private_constant :GITHUB_PERSONAL_ACCESS_TOKEN_REGEX
 
   # Helper functions for accessing the GitHub API.
@@ -40,46 +42,60 @@ module GitHub
 
     # Generic API error.
     class Error < RuntimeError
+      sig { returns(T.nilable(String)) }
       attr_reader :github_message
+
+      sig { params(message: T.nilable(String), github_message: String).void }
+      def initialize(message = nil, github_message = T.unsafe(nil))
+        @github_message = T.let(github_message, T.nilable(String))
+        super(message)
+      end
     end
 
     # Error when the requested URL is not found.
     class HTTPNotFoundError < Error
+      sig { params(github_message: String).void }
       def initialize(github_message)
-        @github_message = github_message
-        super
+        super(nil, github_message)
       end
     end
 
     # Error when the API rate limit is exceeded.
     class RateLimitExceededError < Error
+      sig { params(reset: Integer, github_message: String).void }
       def initialize(reset, github_message)
-        @github_message = github_message
         new_pat_message = ", or:\n#{GitHub.pat_blurb}" if API.credentials.blank?
-        super <<~EOS
+        message = <<~EOS
           GitHub API Error: #{github_message}
           Try again in #{pretty_ratelimit_reset(reset)}#{new_pat_message}
         EOS
+        super(message, github_message)
       end
 
+      sig { params(reset: Integer).returns(String) }
       def pretty_ratelimit_reset(reset)
         pretty_duration(Time.at(reset) - Time.now)
       end
     end
 
-    GITHUB_IP_ALLOWLIST_ERROR = Regexp.new("Although you appear to have the correct authorization credentials, " \
-                                           "the `(.+)` organization has an IP allow list enabled, " \
-                                           "and your IP address is not permitted to access this resource").freeze
+    GITHUB_IP_ALLOWLIST_ERROR = T.let(
+      Regexp.new(
+        "Although you appear to have the correct authorization credentials, " \
+        "the `(.+)` organization has an IP allow list enabled, " \
+        "and your IP address is not permitted to access this resource",
+      ).freeze,
+      Regexp,
+    )
 
-    NO_CREDENTIALS_MESSAGE = <<~MESSAGE.freeze
+    NO_CREDENTIALS_MESSAGE = T.let <<~MESSAGE.freeze, String
       No GitHub credentials found in macOS Keychain, GitHub CLI or the environment.
       #{GitHub.pat_blurb}
     MESSAGE
 
     # Error when authentication fails.
     class AuthenticationFailedError < Error
+      sig { params(credentials_type: Symbol, github_message: String).void }
       def initialize(credentials_type, github_message)
-        @github_message = github_message
         message = "GitHub API Error: #{github_message}\n"
         message << case credentials_type
         when :github_cli_token
@@ -97,18 +113,19 @@ module GitHub
         when :env_token
           require "utils/formatter"
           <<~EOS
-            HOMEBREW_GITHUB_API_TOKEN may be invalid or expired; check:
+            `$HOMEBREW_GITHUB_API_TOKEN` may be invalid or expired; check:
               #{Formatter.url("https://github.com/settings/tokens")}
           EOS
         when :none
           NO_CREDENTIALS_MESSAGE
         end
-        super message.freeze
+        super message.freeze, github_message
       end
     end
 
     # Error when the user has no GitHub API credentials set at all (macOS keychain, GitHub CLI or envvar).
     class MissingAuthenticationError < Error
+      sig { void }
       def initialize
         super NO_CREDENTIALS_MESSAGE
       end
@@ -116,24 +133,21 @@ module GitHub
 
     # Error when the API returns a validation error.
     class ValidationFailedError < Error
+      sig { params(github_message: String, errors: T::Array[String]).void }
       def initialize(github_message, errors)
-        @github_message = if errors.empty?
-          github_message
-        else
-          "#{github_message}: #{errors}"
-        end
+        github_message = "#{github_message}: #{errors}" unless errors.empty?
 
-        super(@github_message)
+        super(github_message, github_message)
       end
     end
 
-    ERRORS = [
+    ERRORS = T.let([
       AuthenticationFailedError,
       HTTPNotFoundError,
       RateLimitExceededError,
       Error,
       JSON::ParserError,
-    ].freeze
+    ].freeze, T::Array[T.any(T.class_of(Error), T.class_of(JSON::ParserError))])
 
     # Gets the token from the GitHub CLI for github.com.
     sig { returns(T.nilable(String)) }
@@ -151,7 +165,7 @@ module GitHub
                                            print_stderr: false
         return unless result.success?
 
-        gh_out.chomp
+        gh_out.chomp.presence
       end
     end
 
@@ -178,14 +192,16 @@ module GitHub
         #   https://github.com/Homebrew/brew/issues/6862#issuecomment-572610344
         return unless GITHUB_PERSONAL_ACCESS_TOKEN_REGEX.match?(github_password)
 
-        github_password
+        github_password.presence
       end
     end
 
+    sig { returns(T.nilable(String)) }
     def self.credentials
+      @credentials ||= T.let(nil, T.nilable(String))
       @credentials ||= Homebrew::EnvConfig.github_api_token.presence
-      @credentials ||= github_cli_token.presence
-      @credentials ||= keychain_username_password.presence
+      @credentials ||= github_cli_token
+      @credentials ||= keychain_username_password
     end
 
     sig { returns(Symbol) }
@@ -201,18 +217,19 @@ module GitHub
       end
     end
 
-    CREDENTIAL_NAMES = {
+    CREDENTIAL_NAMES = T.let({
       env_token:                  "HOMEBREW_GITHUB_API_TOKEN",
       github_cli_token:           "GitHub CLI login",
       keychain_username_password: "macOS Keychain GitHub",
-    }.freeze
+    }.freeze, T::Hash[Symbol, String])
 
     # Given an API response from GitHub, warn the user if their credentials
     # have insufficient permissions.
+    sig { params(response_headers: T::Hash[String, String], needed_scopes: T::Array[String]).void }
     def self.credentials_error_message(response_headers, needed_scopes)
       return if response_headers.empty?
 
-      scopes = response_headers["x-accepted-oauth-scopes"].to_s.split(", ")
+      scopes = response_headers["x-accepted-oauth-scopes"].to_s.split(", ").presence
       needed_scopes = Set.new(scopes || needed_scopes)
       credentials_scopes = response_headers["x-oauth-scopes"]
       return if needed_scopes.subset?(Set.new(credentials_scopes.to_s.split(", ")))
@@ -222,17 +239,35 @@ module GitHub
       credentials_scopes = "none" if credentials_scopes.blank?
 
       what = CREDENTIAL_NAMES.fetch(credentials_type)
-      @credentials_error_message ||= onoe <<~EOS
-        Your #{what} credentials do not have sufficient scope!
-        Scopes required: #{needed_scopes}
-        Scopes present:  #{credentials_scopes}
-        #{github_permission_link}
-      EOS
+      @credentials_error_message ||= T.let(begin
+        error_message = <<~EOS
+          Your #{what} credentials do not have sufficient scope!
+          Scopes required: #{needed_scopes}
+          Scopes present:  #{credentials_scopes}
+          #{github_permission_link}
+        EOS
+        onoe error_message
+        error_message
+      end, T.nilable(String))
     end
 
-    def self.open_rest(
-      url, data: nil, data_binary_path: nil, request_method: nil, scopes: [].freeze, parse_json: true
-    )
+    sig {
+      params(
+        url:              T.any(String, URI::Generic),
+        data:             T::Hash[Symbol, T.untyped],
+        data_binary_path: String,
+        request_method:   Symbol,
+        scopes:           T::Array[String],
+        parse_json:       T::Boolean,
+        _block:           T.nilable(
+          T.proc
+           .params(data: T::Hash[String, T.untyped])
+          .returns(T.untyped),
+        ),
+      ).returns(T.untyped)
+    }
+    def self.open_rest(url, data: T.unsafe(nil), data_binary_path: T.unsafe(nil), request_method: T.unsafe(nil),
+                       scopes: [].freeze, parse_json: true, &_block)
       # This is a no-op if the user is opting out of using the GitHub API.
       return block_given? ? yield({}) : {} if Homebrew::EnvConfig.no_github_api?
 
@@ -289,7 +324,7 @@ module GitHub
 
       begin
         if !http_code.start_with?("2") || !result.status.success?
-          raise_error(output, result.stderr, http_code, headers, scopes)
+          raise_error(output, result.stderr, http_code, headers || "", scopes)
         end
 
         return if http_code == "204" # No Content
@@ -305,7 +340,18 @@ module GitHub
       end
     end
 
-    def self.paginate_rest(url, additional_query_params: nil, per_page: 100, scopes: [].freeze)
+    sig {
+      params(
+        url:                     T.any(String, URI::Generic),
+        additional_query_params: String,
+        per_page:                Integer,
+        scopes:                  T::Array[String],
+        _block:                  T.proc
+           .params(result: T.untyped, page: Integer)
+          .returns(T.untyped),
+      ).void
+    }
+    def self.paginate_rest(url, additional_query_params: T.unsafe(nil), per_page: 100, scopes: [].freeze, &_block)
       (1..API_MAX_PAGES).each do |page|
         retry_count = 1
         result = begin
@@ -324,9 +370,17 @@ module GitHub
       end
     end
 
-    def self.open_graphql(query, variables: nil, scopes: [].freeze, raise_errors: true)
+    sig {
+      params(
+        query:        String,
+        variables:    T::Hash[Symbol, T.untyped],
+        scopes:       T::Array[String],
+        raise_errors: T::Boolean,
+      ).returns(T.untyped)
+    }
+    def self.open_graphql(query, variables: {}, scopes: [].freeze, raise_errors: true)
       data = { query:, variables: }
-      result = open_rest("#{API_URL}/graphql", scopes:, data:, request_method: "POST")
+      result = open_rest("#{API_URL}/graphql", scopes:, data:, request_method: :POST)
 
       if raise_errors
         raise Error, result["errors"].map { |e| e["message"] }.join("\n") if result["errors"].present?
@@ -340,17 +394,16 @@ module GitHub
     sig {
       params(
         query:        String,
-        variables:    T.nilable(T::Hash[Symbol, T.untyped]),
+        variables:    T::Hash[Symbol, T.untyped],
         scopes:       T::Array[String],
         raise_errors: T::Boolean,
-        _block:       T.proc.params(data: T::Hash[String, T.untyped]).returns(T::Hash[String, T.untyped]),
+        _block:       T.proc.params(data: T::Hash[String, T.untyped]).returns(T.untyped),
       ).void
     }
-    def self.paginate_graphql(query, variables: nil, scopes: [].freeze, raise_errors: true, &_block)
+    def self.paginate_graphql(query, variables: {}, scopes: [].freeze, raise_errors: true, &_block)
       result = API.open_graphql(query, variables:, scopes:, raise_errors:)
 
       has_next_page = T.let(true, T::Boolean)
-      variables ||= {}
       while has_next_page
         page_info = yield result
         has_next_page = page_info["hasNextPage"]
@@ -361,6 +414,15 @@ module GitHub
       end
     end
 
+    sig {
+      params(
+        output:    String,
+        errors:    String,
+        http_code: String,
+        headers:   String,
+        scopes:    T::Array[String],
+      ).void
+    }
     def self.raise_error(output, errors, http_code, headers, scopes)
       json = begin
         JSON.parse(output)

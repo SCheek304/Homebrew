@@ -186,7 +186,10 @@ RSpec.describe Utils::Git do
       unless ENV["HOMEBREW_TEST_GENERIC_OS"]
         it "installs git" do
           expect(described_class).to receive(:available?).and_return(false)
-          expect(described_class).to receive(:ensure_formula_installed!).with("git")
+          allow(CoreTap.instance).to receive(:installed?).and_return(true)
+          formula_double = instance_double(Formula)
+          allow(Formula).to receive(:[]).with("git").and_return(formula_double)
+          allow(formula_double).to receive(:ensure_installed!).and_return(formula_double)
           expect(described_class).to receive(:available?).and_return(true)
 
           described_class.ensure_installed!

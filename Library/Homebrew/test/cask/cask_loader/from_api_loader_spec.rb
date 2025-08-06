@@ -31,10 +31,6 @@ RSpec.describe Cask::CaskLoader::FromAPILoader, :cask do
     end
 
     context "when using the API" do
-      before do
-        ENV.delete("HOMEBREW_NO_INSTALL_FROM_API")
-      end
-
       it "returns a loader for valid token" do
         expect(described_class.try_new(api_token))
           .to be_a(described_class)

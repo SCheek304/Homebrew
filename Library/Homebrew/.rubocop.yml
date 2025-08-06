@@ -10,7 +10,13 @@ Homebrew/MoveToExtendOS:
     - "{extend,test,requirements}/**/*"
     - "os.rb"
 
-Naming/PredicateName:
+# We don't use Sorbet for RSpec tests so let's disable this there.
+Sorbet/BlockMethodDefinition:
+  Exclude:
+    - test/**/*
+
+# Want to preserve our own API for these methods for now.
+Naming/PredicatePrefix:
   inherit_mode:
     merge:
       - AllowedMethods
@@ -25,6 +31,7 @@ Style/Documentation:
     - Homebrew
   Include:
     - abstract_command.rb
+    - autobump_constants.rb
     - cask/cask.rb
     - cask/dsl.rb
     - cask/dsl/version.rb
@@ -37,10 +44,10 @@ Style/Documentation:
     - formula.rb
     - formula_assertions.rb
     - formula_free_port.rb
-    - language/go.rb
     - language/java.rb
     - language/node.rb
     - language/perl.rb
+    - language/php.rb
     - language/python.rb
     - livecheck/strategy/apache.rb
     - livecheck/strategy/bitbucket.rb
@@ -65,6 +72,7 @@ Style/Documentation:
     - livecheck/strategy/yaml.rb
     - os.rb
     - resource.rb
+    - startup/config.rb
     - utils/inreplace.rb
     - utils/shebang.rb
     - utils/string_inreplace_extension.rb

@@ -50,29 +50,37 @@ module OS
         conf_file = Pathname(conf_path)
         return [] unless conf_file.exist?
 
+        @library_paths_cache ||= T.let({}, T.nilable(T::Hash[String, T::Array[String]]))
+        cache_key = conf_file.to_s
+        if (cached_library_path_contents = @library_paths_cache[cache_key])
+          return cached_library_path_contents
+        end
+
         paths = Set.new
         directory = conf_file.realpath.dirname
 
-        conf_file.readlines.each do |line|
-          # Remove comments and leading/trailing whitespace
-          line.strip!
-          line.sub!(/\s*#.*$/, "")
+        conf_file.open("r") do |file|
+          file.each_line do |line|
+            # Remove comments and leading/trailing whitespace
+            line.strip!
+            line.sub!(/\s*#.*$/, "")
 
-          if line.start_with?(/\s*include\s+/)
-            include_path = Pathname(line.sub(/^\s*include\s+/, "")).expand_path
-            wildcard = include_path.absolute? ? include_path : directory/include_path
+            if line.start_with?(/\s*include\s+/)
+              include_path = Pathname(line.sub(/^\s*include\s+/, "")).expand_path
+              wildcard = include_path.absolute? ? include_path : directory/include_path
 
-            Dir.glob(wildcard.to_s).each do |include_file|
-              paths += library_paths(include_file)
+              Dir.glob(wildcard.to_s).each do |include_file|
+                paths += library_paths(include_file)
+              end
+            elsif line.empty?
+              next
+            else
+              paths << line
             end
-          elsif line.empty?
-            next
-          else
-            paths << line
           end
         end
 
-        paths.to_a
+        @library_paths_cache[cache_key] = paths.to_a
       end
     end
   end
